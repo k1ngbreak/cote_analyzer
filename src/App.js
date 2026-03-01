@@ -87,7 +87,7 @@ function Spinner() {
 
 export default function App() {
   const [tab, setTab] = useState("analyze");
-  const [thresholdUp, setThresholdUp] = useState(0.35);
+  const [thresholdUp, setThresholdUp] = useState(0.33);
   const [thresholdDown, setThresholdDown] = useState(0.14);
   const [p1, setP1] = useState({ before: "", after: "" });
   const [p2, setP2] = useState({ before: "", after: "" });
