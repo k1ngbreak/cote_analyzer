@@ -47,7 +47,7 @@ async function sbInit(table) {
 function analyzeOdds(before, after, thUp, thDown) {
   const diff = after - before;
   const movement = diff >= 0 ? "up" : "down";
-  const breach = movement === "up" ? diff >= thUp : Math.abs(diff) < thDown;
+  const breach = movement === "up" ? diff > thUp : Math.abs(diff) < thDown;
   return { before, after, diff, movement, breach };
 }
 
