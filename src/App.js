@@ -27,7 +27,6 @@ async function sbSet(table, rowId, data) {
 }
 
 async function sbInit(table) {
-  // Check if row exists, if not insert
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id&limit=1`, { headers });
   const rows = await res.json();
   if (!rows || rows.length === 0) {
@@ -51,12 +50,25 @@ function analyzeOdds(before, after, thUp, thDown) {
   return { before, after, diff, movement, breach };
 }
 
+// Retourne "Favori" ou "Outsider" pour les anciens matchs sans p1IsFav
+function getP1IsFav(m) {
+  if (m.p1IsFav !== undefined) return m.p1IsFav;
+  return m.a1.before < m.a2.before;
+}
+
+// Convertit winner p1/p2 en Favori/Outsider
+function winnerLabel(winner, p1IsFav) {
+  if (winner === "favori") return "Favori";
+  if (winner === "outsider") return "Outsider";
+  if (winner === "p1") return p1IsFav ? "Favori" : "Outsider";
+  return p1IsFav ? "Outsider" : "Favori";
+}
+
 // ─── Components ───────────────────────────────────────────────────────────────
 
 function OddsInput({ label, color, value, onChange }) {
-  const S = { display: "flex", flexDirection: "column", gap: "0.5rem" };
   return (
-    <div style={S}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
       <label style={{ color, fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: "1rem" }}>{label}</label>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
         {[["before", "Cote initiale", "1.50"], ["after", "Cote finale", "1.90"]].map(([k, lbl, ph]) => (
@@ -99,23 +111,19 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [dbError, setDbError] = useState(null);
 
-  // Rule form
-  const emptyRule = { label: "", description: "", p1_movement: "up", p1_breach: true, p2_movement: "down", p2_breach: true, winner: "p1", active: true };
+  const emptyRule = { label: "", description: "", p1_movement: "up", p1_breach: true, p2_movement: "down", p2_breach: true, winner: "favori", active: true };
   const [showForm, setShowForm] = useState(false);
   const [newRule, setNewRule] = useState(emptyRule);
 
-  // History form
   const [hP1, setHP1] = useState({ before: "", after: "" });
   const [hP2, setHP2] = useState({ before: "", after: "" });
   const [hWinner, setHWinner] = useState("p1");
   const [hLabel, setHLabel] = useState("");
 
-  // Pattern detection
   const [extractConf, setExtractConf] = useState(70);
   const [suggested, setSuggested] = useState([]);
   const [showSug, setShowSug] = useState(false);
 
-  // ── Load from Supabase on mount
   useEffect(() => {
     async function load() {
       try {
@@ -135,7 +143,6 @@ export default function App() {
     load();
   }, []);
 
-  // ── Save rules to Supabase
   const saveRules = useCallback(async (newRules) => {
     setRules(newRules);
     if (!rulesRowId) return;
@@ -144,7 +151,6 @@ export default function App() {
     setSaving(false);
   }, [rulesRowId]);
 
-  // ── Save history to Supabase
   const saveHistory = useCallback(async (newHistory) => {
     setHistory(newHistory);
     if (!historyRowId) return;
@@ -153,7 +159,6 @@ export default function App() {
     setSaving(false);
   }, [historyRowId]);
 
-  // ── Analyze
   const analyzeP = (p) => {
     const b = parseFloat(p.before), a = parseFloat(p.after);
     if (isNaN(b) || isNaN(a)) return null;
@@ -171,7 +176,6 @@ export default function App() {
     return m1 && m2;
   }) : [];
 
-  // ── Add rule
   const addRule = () => {
     if (!newRule.label.trim()) return;
     saveRules([...rules, { ...newRule, id: Date.now() }]);
@@ -179,32 +183,41 @@ export default function App() {
     setShowForm(false);
   };
 
-  // ── Add match
   const addMatch = () => {
     const b1 = parseFloat(hP1.before), af1 = parseFloat(hP1.after);
     const b2 = parseFloat(hP2.before), af2 = parseFloat(hP2.after);
     if ([b1, af1, b2, af2].some(isNaN)) return;
     const ma1 = analyzeOdds(b1, af1, thresholdUp, thresholdDown);
     const ma2 = analyzeOdds(b2, af2, thresholdUp, thresholdDown);
-    const entry = { id: Date.now(), label: hLabel || `Match #${history.length + 1}`, a1: ma1, a2: ma2, winner: hWinner, date: new Date().toLocaleDateString("fr-FR") };
+    const p1IsFav = b1 < b2;
+    const entry = {
+      id: Date.now(),
+      label: hLabel || `Match #${history.length + 1}`,
+      a1: ma1, a2: ma2,
+      winner: hWinner,
+      p1IsFav,
+      date: new Date().toLocaleDateString("fr-FR")
+    };
     saveHistory([entry, ...history]);
     setHP1({ before: "", after: "" }); setHP2({ before: "", after: "" }); setHLabel(""); setHWinner("p1");
     setShowSug(false);
   };
 
-  // ── Pattern detection
   const extractPatterns = () => {
     const map = {};
     history.forEach((m) => {
       const k = `${m.a1.movement}:${m.a1.breach}|${m.a2.movement}:${m.a2.breach}`;
-      if (!map[k]) map[k] = { p1: 0, p2: 0, meta: m };
-      map[k][m.winner]++;
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m };
+      const p1Fav = getP1IsFav(m);
+      const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
+      if (winnerIsFav) map[k].fav++;
+      else map[k].outsider++;
     });
     const out = [];
     Object.entries(map).forEach(([, v]) => {
-      const total = v.p1 + v.p2;
-      const bestW = v.p1 >= v.p2 ? "p1" : "p2";
-      const conf = Math.round((Math.max(v.p1, v.p2) / total) * 100);
+      const total = v.fav + v.outsider;
+      const bestW = v.fav >= v.outsider ? "favori" : "outsider";
+      const conf = Math.round((Math.max(v.fav, v.outsider) / total) * 100);
       if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf });
     });
     setSuggested(out.sort((a, b) => b.confidence - a.confidence));
@@ -218,7 +231,7 @@ export default function App() {
   );
 
   const addSuggested = (s) => {
-    const label = `J1 ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + J2 ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "p1" ? "J1" : "J2"} gagne`;
+    const label = `J1 ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + J2 ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
     const rule = {
       id: Date.now(), label,
       description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
@@ -229,13 +242,10 @@ export default function App() {
     saveRules([...rules, rule]);
   };
 
-  // ── Styles
   const S = {
     btn: { display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.65rem 1.25rem", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.8rem", fontWeight: 500 },
     section: { background: "#12121e", border: "1px solid #1e1e30", borderRadius: 12, padding: "1.5rem", marginBottom: "1.25rem" },
     sTitle: { fontFamily: "Syne, sans-serif", fontSize: "0.85rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b6b88", marginBottom: "1.25rem" },
-    input: { width: "100%", background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 6, color: "#e8e6f0", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.9rem", padding: "0.6rem 0.75rem", outline: "none", boxSizing: "border-box" },
-    select: { width: "100%", background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 6, color: "#e8e6f0", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.9rem", padding: "0.6rem 0.75rem", outline: "none", boxSizing: "border-box" },
     label: { display: "block", fontSize: "0.68rem", color: "#6b6b88", marginBottom: "0.35rem", letterSpacing: "0.06em", textTransform: "uppercase" },
   };
 
@@ -251,7 +261,6 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #0a0a0f; color: #e8e6f0; font-family: 'IBM Plex Mono', monospace; }
         .inp, select, textarea { font-family: 'IBM Plex Mono', monospace !important; background: #0a0a0f !important; color: #e8e6f0 !important; -webkit-appearance: none; appearance: none; border: 1px solid #2a2a3a; border-radius: 6px; padding: 0.6rem 0.75rem; width: 100%; font-size: 0.9rem; outline: none; }
@@ -264,8 +273,6 @@ export default function App() {
         @media (max-width: 540px) {
           .g2 { grid-template-columns: 1fr !important; }
           .fg { grid-template-columns: 1fr !important; }
-          .tab-label { display: none; }
-          .tab-icon { display: inline !important; }
         }
       `}</style>
 
@@ -289,7 +296,7 @@ export default function App() {
         <div style={{ display: "flex", marginBottom: "2rem", border: "1px solid #2a2a3a", borderRadius: 8, overflow: "hidden" }}>
           {tabs.map(({ key, label, count }) => (
             <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "0.7rem 0.4rem", background: tab === key ? "#1a1a2e" : "transparent", border: "none", borderBottom: tab === key ? "2px solid #a78bfa" : "2px solid transparent", color: tab === key ? "#a78bfa" : "#6b6b88", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.7rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              <span className="tab-label">{label}</span>
+              {label}
               {count !== undefined && <span style={{ marginLeft: "0.3rem", background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.62rem", color: "#a78bfa" }}>{count}</span>}
             </button>
           ))}
@@ -324,7 +331,9 @@ export default function App() {
                       <div key={i} style={{ borderRadius: 10, padding: "1.25rem", marginBottom: "0.75rem", background: i === 0 ? "linear-gradient(135deg,#0f0a1a,#120e22)" : "linear-gradient(135deg,#0a1018,#0e1420)", border: `1px solid ${i === 0 ? "#2d1f5e" : "#1e3a5e"}` }}>
                         <div style={{ fontFamily: "Syne, sans-serif", fontSize: "1.1rem", fontWeight: 700, color, marginBottom: "0.75rem" }}>
                           {label}
-                          {fav && <span style={{ marginLeft: "0.5rem", fontSize: "0.65rem", color: "#fbbf24", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.4rem", background: "#1c1008", verticalAlign: "middle" }}>FAVORI</span>}
+                          <span style={{ marginLeft: "0.5rem", fontSize: "0.65rem", color: fav ? "#fbbf24" : "#a0a0c0", border: `1px solid ${fav ? "#78350f" : "#2a2a3a"}`, borderRadius: 4, padding: "0.15rem 0.4rem", background: fav ? "#1c1008" : "#12121e", verticalAlign: "middle" }}>
+                            {fav ? "FAVORI" : "OUTSIDER"}
+                          </span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "0.75rem" }}>
                           <span style={{ fontSize: "1.5rem", fontWeight: 600 }}>{a.before.toFixed(2)}</span>
@@ -342,7 +351,9 @@ export default function App() {
                           <div key={r.id} style={{ background: "#0d1f0d", border: "1px solid #1e3a1e", borderRadius: 8, padding: "0.85rem", marginBottom: "0.5rem" }}>
                             <div style={{ fontSize: "0.82rem", color: "#86efac", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
                             {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", marginBottom: "0.4rem" }}>{r.description}</div>}
-                            <div style={{ fontSize: "0.78rem", color: "#6b6b88" }}>Prédiction : <strong style={{ color: "#fbbf24" }}>{r.winner === "p1" ? "Joueur 1" : "Joueur 2"}</strong></div>
+                            <div style={{ fontSize: "0.78rem", color: "#6b6b88" }}>
+                              Prédiction : <strong style={{ color: "#fbbf24" }}>{winnerLabel(r.winner, p1IsFavorite)} gagne</strong>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -379,18 +390,13 @@ export default function App() {
                       </select>
                     </div>
                     <div style={{ display: "flex", alignItems: "flex-end" }}>
-                      <button
-                        style={{ ...S.btn, background: "linear-gradient(135deg,#7c3aed,#2563eb)", color: "white", width: "100%", justifyContent: "center" }}
-                        onClick={addMatch}
-                        disabled={!hP1.before || !hP1.after || !hP2.before || !hP2.after}
-                      >
+                      <button style={{ ...S.btn, background: "linear-gradient(135deg,#7c3aed,#2563eb)", color: "white", width: "100%", justifyContent: "center" }} onClick={addMatch} disabled={!hP1.before || !hP1.after || !hP2.before || !hP2.after}>
                         + Ajouter
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Pattern detection */}
                 {history.length >= 2 && (
                   <div style={S.section}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
@@ -420,9 +426,11 @@ export default function App() {
                                   `J1: ${s.meta.a1.movement === "up" ? "monte" : "baisse"} ${s.meta.a1.breach ? "⚠" : "✓"}`,
                                   `J2: ${s.meta.a2.movement === "up" ? "monte" : "baisse"} ${s.meta.a2.breach ? "⚠" : "✓"}`,
                                 ].map((t, j) => <span key={j} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
-                                <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>→ {s.winner === "p1" ? "J1" : "J2"} gagne</span>
+                                <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>
+                                  → {s.winner === "favori" ? "Favori" : "Outsider"} gagne
+                                </span>
                               </div>
-                              <div style={{ fontSize: "0.65rem", color: "#6b6b88", marginTop: "0.4rem" }}>J1 gagne: {s.p1}× · J2 gagne: {s.p2}×</div>
+                              <div style={{ fontSize: "0.65rem", color: "#6b6b88", marginTop: "0.4rem" }}>Favori gagne: {s.fav}× · Outsider gagne: {s.outsider}×</div>
                             </div>
                             <button
                               style={{ ...S.btn, background: alreadyAdded(s) ? "#1a1a2e" : "linear-gradient(135deg,#065f46,#047857)", color: alreadyAdded(s) ? "#4ade80" : "#d1fae5", fontSize: "0.72rem", padding: "0.5rem 0.85rem", flexShrink: 0, border: alreadyAdded(s) ? "1px solid #4ade80" : "none" }}
@@ -437,34 +445,42 @@ export default function App() {
                   </div>
                 )}
 
-                {/* History list */}
                 <div style={S.section}>
                   <div style={S.sTitle}>Matchs ({history.length})</div>
                   {history.length === 0 ? (
                     <div style={{ textAlign: "center", padding: "2rem", color: "#6b6b88", fontSize: "0.8rem" }}>Aucun match. Ajoute ton premier match ci-dessus.</div>
-                  ) : history.map((m) => (
-                    <div key={m.id} style={{ background: "#0a0a0f", border: "1px solid #1e1e30", borderRadius: 10, padding: "1rem 1.25rem", marginBottom: "0.75rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
-                        <div>
-                          <div style={{ fontFamily: "Syne, sans-serif", fontSize: "0.9rem", fontWeight: 700 }}>{m.label}</div>
-                          <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.2rem" }}>{m.date}</div>
-                        </div>
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                          <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>🏆 {m.winner === "p1" ? "J1" : "J2"} gagne</span>
-                          <button style={{ ...S.btn, padding: "0.35rem 0.65rem", fontSize: "0.68rem", background: "transparent", border: "1px solid #3a1a1a", color: "#f87171" }} onClick={() => saveHistory(history.filter(h => h.id !== m.id))}>✕</button>
-                        </div>
-                      </div>
-                      <div className="g2">
-                        {[{ label: "Joueur 1", a: m.a1, color: "#a78bfa" }, { label: "Joueur 2", a: m.a2, color: "#60a5fa" }].map((p, i) => (
-                          <div key={i} style={{ background: "#12121e", borderRadius: 8, padding: "0.75rem" }}>
-                            <div style={{ fontSize: "0.7rem", color: p.color, marginBottom: "0.4rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>{p.label}</div>
-                            <div style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>{p.a.before.toFixed(2)} → {p.a.after.toFixed(2)}</div>
-                            <Badge movement={p.a.movement} diff={p.a.diff} breach={p.a.breach} />
+                  ) : history.map((m) => {
+                    const p1Fav = getP1IsFav(m);
+                    const wLabel = winnerLabel(m.winner, p1Fav);
+                    return (
+                      <div key={m.id} style={{ background: "#0a0a0f", border: "1px solid #1e1e30", borderRadius: 10, padding: "1rem 1.25rem", marginBottom: "0.75rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                          <div>
+                            <div style={{ fontFamily: "Syne, sans-serif", fontSize: "0.9rem", fontWeight: 700 }}>{m.label}</div>
+                            <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.2rem" }}>{m.date}</div>
                           </div>
-                        ))}
+                          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                            <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>🏆 {wLabel} gagne</span>
+                            <button style={{ ...S.btn, padding: "0.35rem 0.65rem", fontSize: "0.68rem", background: "transparent", border: "1px solid #3a1a1a", color: "#f87171" }} onClick={() => saveHistory(history.filter(h => h.id !== m.id))}>✕</button>
+                          </div>
+                        </div>
+                        <div className="g2">
+                          {[
+                            { label: "Joueur 1", a: m.a1, color: "#a78bfa", fav: p1Fav },
+                            { label: "Joueur 2", a: m.a2, color: "#60a5fa", fav: !p1Fav }
+                          ].map((p, i) => (
+                            <div key={i} style={{ background: "#12121e", borderRadius: 8, padding: "0.75rem" }}>
+                              <div style={{ fontSize: "0.7rem", color: p.color, marginBottom: "0.4rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                {p.label} <span style={{ color: p.fav ? "#fbbf24" : "#6b6b88" }}>({p.fav ? "Favori" : "Outsider"})</span>
+                              </div>
+                              <div style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>{p.a.before.toFixed(2)} → {p.a.after.toFixed(2)}</div>
+                              <Badge movement={p.a.movement} diff={p.a.diff} breach={p.a.breach} />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -481,13 +497,13 @@ export default function App() {
                   <div style={{ background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 10, padding: "1.25rem", marginBottom: "1.25rem" }}>
                     <div style={{ fontFamily: "Syne, sans-serif", fontSize: "0.8rem", color: "#a78bfa", marginBottom: "1rem", fontWeight: 700, textTransform: "uppercase" }}>Nouvelle règle</div>
                     <div className="fg" style={{ marginBottom: "0.75rem" }}>
-                      <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Nom *</label><input className="inp" type="text" placeholder="ex: J1 monte sans seuil + J2 baisse sans seuil → J2 gagne" value={newRule.label} onChange={(e) => setNewRule({ ...newRule, label: e.target.value })} /></div>
+                      <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Nom *</label><input className="inp" type="text" placeholder="ex: Favori monte (seuil KO) + Outsider baisse (seuil KO) → Outsider gagne" value={newRule.label} onChange={(e) => setNewRule({ ...newRule, label: e.target.value })} /></div>
                       <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Description</label><textarea className="inp" style={{ minHeight: 60, resize: "vertical", lineHeight: 1.5 }} placeholder="Explication..." value={newRule.description} onChange={(e) => setNewRule({ ...newRule, description: e.target.value })} /></div>
                       <div><label style={S.label}>J1 — Mouvement</label><select value={newRule.p1_movement} onChange={(e) => setNewRule({ ...newRule, p1_movement: e.target.value })}><option value="up">▲ Monte</option><option value="down">▼ Baisse</option><option value="any">Peu importe</option></select></div>
                       <div><label style={S.label}>J1 — Seuil</label><select value={newRule.p1_breach ? "b" : "o"} onChange={(e) => setNewRule({ ...newRule, p1_breach: e.target.value === "b" })}><option value="b">⚠ Non-respecté</option><option value="o">✓ Respecté</option></select></div>
                       <div><label style={S.label}>J2 — Mouvement</label><select value={newRule.p2_movement} onChange={(e) => setNewRule({ ...newRule, p2_movement: e.target.value })}><option value="up">▲ Monte</option><option value="down">▼ Baisse</option><option value="any">Peu importe</option></select></div>
                       <div><label style={S.label}>J2 — Seuil</label><select value={newRule.p2_breach ? "b" : "o"} onChange={(e) => setNewRule({ ...newRule, p2_breach: e.target.value === "b" })}><option value="b">⚠ Non-respecté</option><option value="o">✓ Respecté</option></select></div>
-                      <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Gagnant prédit</label><select value={newRule.winner} onChange={(e) => setNewRule({ ...newRule, winner: e.target.value })}><option value="p1">Joueur 1</option><option value="p2">Joueur 2</option></select></div>
+                      <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Gagnant prédit</label><select value={newRule.winner} onChange={(e) => setNewRule({ ...newRule, winner: e.target.value })}><option value="favori">Favori</option><option value="outsider">Outsider</option></select></div>
                     </div>
                     <div style={{ display: "flex", gap: "0.75rem" }}>
                       <button style={{ ...S.btn, background: "linear-gradient(135deg,#7c3aed,#2563eb)", color: "white" }} onClick={addRule}>Enregistrer</button>
@@ -508,7 +524,9 @@ export default function App() {
                           `J1: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`,
                           `J2: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`,
                         ].map((t, i) => <span key={i} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
-                        <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>→ {r.winner === "p1" ? "J1 gagne" : "J2 gagne"}</span>
+                        <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>
+                          → {winnerLabel(r.winner, true)} gagne
+                        </span>
                         {r.confidence && <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a78bfa" }}>🤖 {r.confidence}%</span>}
                       </div>
                     </div>
@@ -528,7 +546,7 @@ export default function App() {
                 <div className="fg">
                   <div>
                     <label style={S.label}>▲ Hausse — non-respecté si diff &gt; X</label>
-                    <input className="inp" type="number" step="0.01" min="0.01" value={thresholdUp} onChange={(e) => setThresholdUp(parseFloat(e.target.value) || 0.35)} />
+                    <input className="inp" type="number" step="0.01" min="0.01" value={thresholdUp} onChange={(e) => setThresholdUp(parseFloat(e.target.value) || 0.34)} />
                     <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.4rem" }}>Actuel : diff &gt; {thresholdUp} = non-respecté</div>
                   </div>
                   <div>
