@@ -195,11 +195,16 @@ export default function App() {
     history.forEach((m) => {
       const k = `${m.a1.movement}:${m.a1.breach}|${m.a2.movement}:${m.a2.breach}`;
       const p1Fav = getP1IsFav(m);
-      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [], rounds: [] };
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [], roundStats: {} };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
       map[k].favOdds.push(p1Fav ? m.a1.after : m.a2.after);
       map[k].outsiderOdds.push(p1Fav ? m.a2.after : m.a1.after);
-      if (m.round && m.round.toString().trim()) map[k].rounds.push(m.round.toString().trim());
+      if (m.round && m.round.toString().trim()) {
+        const rnd = m.round.toString().trim();
+        if (!map[k].roundStats[rnd]) map[k].roundStats[rnd] = { win: 0, total: 0 };
+        map[k].roundStats[rnd].total++;
+        if (winnerIsFav) map[k].roundStats[rnd].win++;
+      }
       if (winnerIsFav) map[k].fav++;
       else map[k].outsider++;
     });
@@ -210,10 +215,18 @@ export default function App() {
       const bestW = v.fav >= v.outsider ? "favori" : "outsider";
       const conf = Math.round((Math.max(v.fav, v.outsider) / total) * 100);
       // Top rounds by frequency
-      const roundCounts = {};
-      v.rounds.forEach(r => { roundCounts[r] = (roundCounts[r] || 0) + 1; });
-      const topRounds = Object.entries(roundCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
-      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf, avgFavOdd: avg(v.favOdds), avgOutsiderOdd: avg(v.outsiderOdds), topRounds, totalWithRound: v.rounds.length });
+      // Rounds: sort by total occurrences, show win% for predicted winner
+      const topRounds = Object.entries(v.roundStats)
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 4)
+        .map(([rnd, s]) => {
+          const winPct = bestW === "favori"
+            ? Math.round((s.win / s.total) * 100)
+            : Math.round(((s.total - s.win) / s.total) * 100);
+          return { rnd, total: s.total, pct: winPct };
+        });
+      const totalWithRound = Object.values(v.roundStats).reduce((acc, s) => acc + s.total, 0);
+      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf, avgFavOdd: avg(v.favOdds), avgOutsiderOdd: avg(v.outsiderOdds), topRounds, totalWithRound });
     });
     setSuggested(out.sort((a, b) => b.confidence - a.confidence));
     setShowSug(true);
@@ -431,9 +444,9 @@ export default function App() {
                                 <div style={{ marginTop: "0.3rem" }}>
                                   <span style={{ fontSize: "0.62rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Rounds ({s.totalWithRound}/{s.total} matchs renseignés) : </span>
                                   <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
-                                    {s.topRounds.map(([round, count], ri) => (
-                                      <span key={ri} style={{ background: ri === 0 ? "#1a0f2e" : "#12121e", border: `1px solid ${ri === 0 ? "#7c3aed" : "#2a2a3a"}`, borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: ri === 0 ? "#c4b5fd" : "#a0a0c0" }}>
-                                        {ri === 0 ? "🎯 " : ""}{round} · {count}×
+                                    {s.topRounds.map((r, ri) => (
+                                      <span key={ri} style={{ background: ri === 0 ? "#1a0f2e" : "#12121e", border: `1px solid ${r.pct >= 80 ? "#7c3aed" : r.pct >= 60 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: r.pct >= 80 ? "#c4b5fd" : r.pct >= 60 ? "#93c5fd" : "#a0a0c0" }}>
+                                        {ri === 0 ? "🎯 " : ""}{r.rnd} · {r.pct}% ({r.total}m)
                                       </span>
                                     ))}
                                   </div>
