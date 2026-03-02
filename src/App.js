@@ -220,21 +220,14 @@ export default function App() {
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
 
-    // Variables communes pour vérifier le bracket
     const favBefore = p1IsFavorite ? parseFloat(p1.before) : parseFloat(p2.before);
     const currentBracket = getOddsBracket(favBefore);
 
     // --- 1. Règle Standard (sans seuils personnalisés) ---
     if (!r.custom_thUp) {
-      // Sens Normal : Input 1 = J1 Règle / Input 2 = J2 Règle
-      const m1_n = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
-      const m2_n = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
-      
-      // Sens Inversé : Input 1 = J2 Règle / Input 2 = J1 Règle
-      const m1_i = r.p2_movement === "any" || (a1.movement === r.p2_movement && a1.breach === r.p2_breach);
-      const m2_i = r.p1_movement === "any" || (a2.movement === r.p1_movement && a2.breach === r.p1_breach);
-      
-      return (m1_n && m2_n) || (m1_i && m2_i);
+      const m1 = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
+      const m2 = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
+      return m1 && m2;
     }
 
     // --- 2. Golden Pattern (issu du Deep Scan) ---
@@ -244,15 +237,10 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
     const customA1 = analyzeOdds(parseFloat(p1.before), parseFloat(p1.after), r.custom_thUp, r.custom_thDown);
     const customA2 = analyzeOdds(parseFloat(p2.before), parseFloat(p2.after), r.custom_thUp, r.custom_thDown);
 
-    // Sens Normal
-    const m1_n = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
-    const m2_n = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
-    
-    // Sens Inversé
-    const m1_i = r.p2_movement === "any" || (customA1.movement === r.p2_movement && customA1.breach === r.p2_breach);
-    const m2_i = r.p1_movement === "any" || (customA2.movement === r.p1_movement && customA2.breach === r.p1_breach);
+    const m1 = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
+    const m2 = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
 
-    return (m1_n && m2_n) || (m1_i && m2_i);
+    return m1 && m2;
   }) : [];
 
   const addRule = () => {
@@ -425,6 +413,35 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
       custom_thDown: p.thDown,
       custom_bracket: p.bracket
     }]);
+  };
+
+  const normalizeHistory = () => {
+    if (!window.confirm("Ceci va réorganiser tes 50 matchs pour que J1 soit toujours le favori. Continuer ?")) return;
+
+    const fixedHistory = history.map(m => {
+      const p1Fav = getP1IsFav(m);
+      
+      // Si J1 était déjà le favori, on ne touche à rien (on force juste le flag)
+      if (p1Fav) {
+        return { ...m, p1IsFav: true }; 
+      }
+
+      // Si J2 était le favori, on croise toutes les données !
+      let newWinner = m.winner;
+      if (m.winner === "p1") newWinner = "p2";
+      else if (m.winner === "p2") newWinner = "p1";
+
+      return {
+        ...m,
+        a1: m.a2,       // L'analyse du J2 (qui était favori) passe en J1
+        a2: m.a1,       // L'analyse du J1 (qui était outsider) passe en J2
+        winner: newWinner,
+        p1IsFav: true   // J1 devient le favori officiel
+      };
+    });
+
+    saveHistory(fixedHistory);
+    alert("Historique corrigé ! 🧹 Tes matchs sont maintenant parfaitement alignés.");
   };
   
   const alreadyAdded = (s) => rules.some((r) =>
@@ -909,6 +926,19 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
                     <input className="inp" type="number" step="0.01" min="0.01" value={thresholdUp} onChange={(e) => setThresholdUp(parseFloat(e.target.value) || 0.34)} />
                     <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.4rem" }}>Actuel : diff &gt; {thresholdUp} = non-respecté</div>
                   </div>
+                  <div style={{ ...S.section, marginTop: "1.25rem", border: "1px solid #7f1d1d", background: "#2a0a0a" }}>
+                <div style={{ ...S.sTitle, color: "#f87171" }}>Maintenance de la Base de Données</div>
+                <div style={{ fontSize: "0.78rem", color: "#fca5a5", marginBottom: "1rem", lineHeight: 1.5 }}>
+                  Utilise ce bouton si tu as saisi des matchs où le Favori était en Joueur 2. 
+                  L'outil va scanner tout ton historique et inverser les données pour que le Favori soit TOUJOURS en Joueur 1.
+                </div>
+                <button 
+                  style={{ ...S.btn, background: "#7f1d1d", color: "white" }} 
+                  onClick={normalizeHistory}
+                >
+                  🧹 Normaliser l'historique (Forcer Fav = J1)
+                </button>
+              </div>
                   <div>
                     <label style={S.label}>▼ Baisse — non-respecté si |diff| &lt; X</label>
                     <input className="inp" type="number" step="0.01" min="0.01" value={thresholdDown} onChange={(e) => setThresholdDown(parseFloat(e.target.value) || 0.14)} />
