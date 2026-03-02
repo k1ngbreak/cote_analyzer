@@ -207,18 +207,23 @@ export default function App() {
     const map = {};
     history.forEach((m) => {
       const k = `${m.a1.movement}:${m.a1.breach}|${m.a2.movement}:${m.a2.breach}`;
-      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m };
       const p1Fav = getP1IsFav(m);
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [] };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
+      const favOdd = p1Fav ? m.a1.before : m.a2.before;
+      const outsiderOdd = p1Fav ? m.a2.before : m.a1.before;
+      map[k].favOdds.push(favOdd);
+      map[k].outsiderOdds.push(outsiderOdd);
       if (winnerIsFav) map[k].fav++;
       else map[k].outsider++;
     });
+    const avg = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : "—";
     const out = [];
     Object.entries(map).forEach(([, v]) => {
       const total = v.fav + v.outsider;
       const bestW = v.fav >= v.outsider ? "favori" : "outsider";
       const conf = Math.round((Math.max(v.fav, v.outsider) / total) * 100);
-      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf });
+      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf, avgFavOdd: avg(v.favOdds), avgOutsiderOdd: avg(v.outsiderOdds) });
     });
     setSuggested(out.sort((a, b) => b.confidence - a.confidence));
     setShowSug(true);
@@ -431,6 +436,10 @@ export default function App() {
                                 </span>
                               </div>
                               <div style={{ fontSize: "0.65rem", color: "#6b6b88", marginTop: "0.4rem" }}>Favori gagne: {s.fav}× · Outsider gagne: {s.outsider}×</div>
+                              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+                                <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>Cote moy. Favori : {s.avgFavOdd}</span>
+                                <span style={{ background: "#0a1018", border: "1px solid #1e3a5e", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#93c5fd" }}>Cote moy. Outsider : {s.avgOutsiderOdd}</span>
+                              </div>
                             </div>
                             <button
                               style={{ ...S.btn, background: alreadyAdded(s) ? "#1a1a2e" : "linear-gradient(135deg,#065f46,#047857)", color: alreadyAdded(s) ? "#4ade80" : "#d1fae5", fontSize: "0.72rem", padding: "0.5rem 0.85rem", flexShrink: 0, border: alreadyAdded(s) ? "1px solid #4ade80" : "none" }}
