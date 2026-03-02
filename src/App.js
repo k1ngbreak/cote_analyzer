@@ -352,6 +352,34 @@ export default function App() {
     }, 100);
   };
 
+
+  const alreadyAddedGolden = (p) => rules.some((r) =>
+    r.p1_movement === p.a1.movement && r.p1_breach === p.a1.breach &&
+    r.p2_movement === p.a2.movement && r.p2_breach === p.a2.breach &&
+    r.custom_bracket === p.bracket &&
+    r.custom_thUp === p.thUp &&
+    r.custom_thDown === p.thDown
+  );
+
+  const addGoldenRule = (p) => {
+    const label = `🔥 [${p.bracket}] J1 ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + J2 ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
+    
+    saveRules([...rules, {
+      id: Date.now(),
+      label,
+      description: `Deep Scan — ${p.total} matchs, ${p.confidence}% réussite. Seuils Optis : Hausse >${p.thUp}, Baisse <${p.thDown}.`,
+      p1_movement: p.a1.movement, p1_breach: p.a1.breach,
+      p2_movement: p.a2.movement, p2_breach: p.a2.breach,
+      winner: p.winner,
+      active: true,
+      confidence: p.confidence,
+      // On sauvegarde les paramètres spécifiques à ce pattern
+      custom_thUp: p.thUp,
+      custom_thDown: p.thDown,
+      custom_bracket: p.bracket
+    }]);
+  };
+  
   const alreadyAdded = (s) => rules.some((r) =>
     r.p1_movement === s.meta.a1.movement && r.p1_breach === s.meta.a1.breach &&
     r.p2_movement === s.meta.a2.movement && r.p2_breach === s.meta.a2.breach
@@ -682,19 +710,27 @@ export default function App() {
                           <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem" }}>Aucun pattern à +80% trouvé avec cet échantillon.</div>
                         ) : goldenPatterns.map((p, i) => (
                           <div key={i} style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                              <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
-                              <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
-                            </div>
-                            <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>
-                              {p.key}
-                            </div>
-                            <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                              <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
-                              <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
-                              <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
-                            </div>
-                          </div>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                                        <div>
+                                          <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
+                                          <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
+                                        </div>
+                                        <button
+                                          style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none" }}
+                                          onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
+                                        >
+                                          {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
+                                        </button>
+                                      </div>
+                                      <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>
+                                        {p.key}
+                                      </div>
+                                      <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                                        <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                                        <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                                        <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
+                                      </div>
+                                    </div>
                         ))}
                       </div>
                     )}
