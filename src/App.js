@@ -47,6 +47,46 @@ function winnerLabel(winner, p1IsFav) {
   return p1IsFav ? "Outsider" : "Favori";
 }
 
+function computeRuleStats(rule, history, thUp, thDown) {
+  const matchingMatches = history.filter((m) => {
+    const m1 = rule.p1_movement === "any" || (m.a1.movement === rule.p1_movement && m.a1.breach === rule.p1_breach);
+    const m2 = rule.p2_movement === "any" || (m.a2.movement === rule.p2_movement && m.a2.breach === rule.p2_breach);
+    return m1 && m2;
+  });
+  if (matchingMatches.length === 0) return null;
+
+  let correctCount = 0;
+  const winOdds = [];
+  const roundStats = {};
+
+  matchingMatches.forEach((m) => {
+    const p1Fav = getP1IsFav(m);
+    const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
+    const correct = winnerIsFav === (rule.winner === "favori");
+    if (correct) {
+      correctCount++;
+      winOdds.push(rule.winner === "favori"
+        ? (p1Fav ? m.a1.after : m.a2.after)
+        : (p1Fav ? m.a2.after : m.a1.after));
+    }
+    if (m.round?.toString().trim()) {
+      const rnd = m.round.toString().trim();
+      if (!roundStats[rnd]) roundStats[rnd] = { correct: 0, total: 0 };
+      roundStats[rnd].total++;
+      if (correct) roundStats[rnd].correct++;
+    }
+  });
+
+  const total = matchingMatches.length;
+  const confidence = Math.round((correctCount / total) * 100);
+  const avgWinOdd = winOdds.length ? (winOdds.reduce((a, b) => a + b, 0) / winOdds.length).toFixed(2) : "—";
+  const topRounds = Object.entries(roundStats)
+    .sort((a, b) => b[1].total - a[1].total).slice(0, 4)
+    .map(([rnd, s]) => ({ rnd, total: s.total, pct: Math.round((s.correct / s.total) * 100) }));
+  const totalWithRound = Object.values(roundStats).reduce((acc, s) => acc + s.total, 0);
+  return { total, correctCount, confidence, avgWinOdd, topRounds, totalWithRound };
+}
+
 function OddsInput({ label, color, value, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -375,16 +415,56 @@ export default function App() {
                         <Badge movement={a.movement} diff={a.diff} breach={a.breach} />
                       </div>
                     ))}
-                    {matchedRules.length > 0 ? (
-                      <div style={{ background: "linear-gradient(135deg,#0f1a0f,#0a150a)", border: "1px solid #1e4a1e", borderRadius: 10, padding: "1.25rem", marginTop: "1rem" }}>
-                        <div style={{ fontFamily: "Syne, sans-serif", fontSize: "0.85rem", fontWeight: 700, color: "#4ade80", marginBottom: "0.75rem", letterSpacing: "0.08em", textTransform: "uppercase" }}>🎯 {matchedRules.length} règle(s) déclenchée(s)</div>
-                        {matchedRules.map((r) => (
-                          <div key={r.id} style={{ background: "#0d1f0d", border: "1px solid #1e3a1e", borderRadius: 8, padding: "0.85rem", marginBottom: "0.5rem" }}>
-                            <div style={{ fontSize: "0.82rem", color: "#86efac", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
-                            {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", marginBottom: "0.4rem" }}>{r.description}</div>}
-                            <div style={{ fontSize: "0.78rem", color: "#6b6b88" }}>Prédiction : <strong style={{ color: "#fbbf24" }}>{winnerLabel(r.winner, p1IsFavorite)} gagne</strong></div>
+                  {matchedRules.map((r) => {
+                    const stats = computeRuleStats(r, history, thresholdUp, thresholdDown);
+                    return (
+                      <div key={r.id} style={{ background: "#0d1f0d", border: "1px solid #1e3a1e", borderRadius: 8, padding: "0.85rem 1rem", marginBottom: "0.5rem" }}>
+                        <div style={{ fontSize: "0.82rem", color: "#86efac", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
+                        {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", marginBottom: "0.5rem" }}>{r.description}</div>}
+                        <div style={{ fontSize: "0.78rem", color: "#6b6b88", marginBottom: "0.75rem" }}>
+                          Prédiction : <strong style={{ color: "#fbbf24" }}>{winnerLabel(r.winner, p1IsFavorite)} gagne</strong>
+                        </div>
+                        {stats ? (
+                          <div style={{ borderTop: "1px solid #1a3a1a", paddingTop: "0.65rem" }}>
+                            {/* Barre de confiance */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+                              <div style={{ flex: 1, height: 6, background: "#1a1a2e", borderRadius: 3, overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${stats.confidence}%`, background: stats.confidence >= 70 ? "linear-gradient(90deg,#4ade80,#22c55e)" : stats.confidence >= 50 ? "linear-gradient(90deg,#fbbf24,#f59e0b)" : "linear-gradient(90deg,#f87171,#ef4444)", borderRadius: 3 }} />
+                              </div>
+                              <span style={{ fontSize: "0.72rem", color: stats.confidence >= 70 ? "#4ade80" : stats.confidence >= 50 ? "#fbbf24" : "#f87171", fontWeight: 600, whiteSpace: "nowrap" }}>{stats.confidence}% réussite</span>
+                              <span style={{ fontSize: "0.65rem", color: "#6b6b88", whiteSpace: "nowrap" }}>{stats.correctCount}/{stats.total}m</span>
+                            </div>
+                            {/* Cote moyenne */}
+                            {stats.avgWinOdd !== "—" && (
+                              <div style={{ marginBottom: "0.5rem" }}>
+                                <span style={{ background: "#0f1a0f", border: "1px solid #166534", borderRadius: 4, padding: "0.2rem 0.6rem", fontSize: "0.65rem", color: "#4ade80", fontWeight: 600 }}>
+                                  ✓ Cote moy. {r.winner === "favori" ? "Favori" : "Outsider"} quand correct : {stats.avgWinOdd}
+                                </span>
+                              </div>
+                            )}
+                            {/* Rounds */}
+                            {stats.topRounds.length > 0 && (
+                              <div>
+                                <span style={{ fontSize: "0.62rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Rounds ({stats.totalWithRound}/{stats.total} renseignés) :</span>
+                                <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                                  {stats.topRounds.map((rd, ri) => (
+                                    <span key={ri} style={{ background: ri === 0 ? "#1a0f2e" : "#12121e", border: `1px solid ${rd.pct >= 80 ? "#7c3aed" : rd.pct >= 60 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: rd.pct >= 80 ? "#c4b5fd" : rd.pct >= 60 ? "#93c5fd" : "#a0a0c0" }}>
+                                      {ri === 0 ? "🎯 " : ""}{rd.rnd} · {rd.pct}% ({rd.total}m)
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {stats.topRounds.length === 0 && <div style={{ fontSize: "0.62rem", color: "#3a3a55" }}>Aucun round renseigné pour cette règle</div>}
                           </div>
-                        ))}
+                        ) : (
+                          <div style={{ fontSize: "0.68rem", color: "#3a3a55", borderTop: "1px solid #1a3a1a", paddingTop: "0.5rem" }}>
+                            Pas encore de données dans l'historique pour cette règle.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                       </div>
                     ) : (
                       <div style={{ background: "#12100a", border: "1px dashed #3a2a1a", borderRadius: 8, padding: "1rem", marginTop: "0.75rem", fontSize: "0.78rem", color: "#6b6b88", textAlign: "center" }}>
