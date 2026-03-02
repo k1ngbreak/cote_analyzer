@@ -47,6 +47,13 @@ function winnerLabel(winner, p1IsFav) {
   return p1IsFav ? "Outsider" : "Favori";
 }
 
+function getOddsBracket(odd) {
+  if (odd <= 1.30) return "Ultra-Fav (<=1.30)";
+  if (odd <= 1.60) return "Fav Solide (1.31-1.60)";
+  if (odd <= 1.95) return "Match Serré (1.61-1.95)";
+  return "Outsider (>1.95)";
+}
+
 function computeRuleStats(rule, history, thUp, thDown) {
   const matchingMatches = history.filter((m) => {
     const m1 = rule.p1_movement === "any" || (m.a1.movement === rule.p1_movement && m.a1.breach === rule.p1_breach);
@@ -147,6 +154,12 @@ export default function App() {
   // Inline round editing state
   const [editingRoundId, setEditingRoundId] = useState(null);
   const [editingRoundVal, setEditingRoundVal] = useState("");
+
+  // --- States pour le Deep Scan ---
+  const [goldenPatterns, setGoldenPatterns] = useState([]);
+  const [showDeepScan, setShowDeepScan] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [minMatchesDeep, setMinMatchesDeep] = useState(5);
 
   useEffect(() => {
     async function load() {
@@ -284,6 +297,59 @@ export default function App() {
     });
     setSuggested(out.sort((a, b) => b.confidence - a.confidence));
     setShowSug(true);
+  };
+
+  const runDeepScan = () => {
+    setIsScanning(true);
+    setShowDeepScan(true);
+    
+    setTimeout(() => {
+      const testThresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45];
+      const foundConfigs = [];
+
+      testThresholds.forEach(thUp => {
+        testThresholds.forEach(thDown => {
+          const map = {};
+
+          history.forEach(m => {
+            const p1Fav = getP1IsFav(m);
+            const favBefore = p1Fav ? m.a1.before : m.a2.before;
+            const bracket = getOddsBracket(favBefore);
+            
+            const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
+            const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
+            
+            const k = `[${bracket}] J1:${a1.movement}(${a1.breach ? 'KO' : 'OK'}) | J2:${a2.movement}(${a2.breach ? 'KO' : 'OK'})`;
+            const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
+
+            if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2 };
+            if (winnerIsFav) map[k].fav++;
+            else map[k].outsider++;
+          });
+
+          Object.entries(map).forEach(([key, v]) => {
+            const total = v.fav + v.outsider;
+            if (total >= minMatchesDeep) {
+              const confFav = Math.round((v.fav / total) * 100);
+              const confOut = Math.round((v.outsider / total) * 100);
+              
+              if (confFav >= 80) foundConfigs.push({ ...v, winner: "favori", confidence: confFav, total, key });
+              if (confOut >= 80) foundConfigs.push({ ...v, winner: "outsider", confidence: confOut, total, key });
+            }
+          });
+        });
+      });
+
+      const uniqueBest = [];
+      foundConfigs.sort((a, b) => b.confidence - a.confidence || b.total - a.total).forEach(config => {
+        if (!uniqueBest.some(u => u.key === config.key && u.winner === config.winner)) {
+          uniqueBest.push(config);
+        }
+      });
+
+      setGoldenPatterns(uniqueBest);
+      setIsScanning(false);
+    }, 100);
   };
 
   const alreadyAdded = (s) => rules.some((r) =>
@@ -586,6 +652,54 @@ export default function App() {
                   </div>
                 )}
 
+                {/* --- DEEP SCAN UI --- */}
+                {history.length >= 2 && (
+                  <div style={{ ...S.section, border: "1px solid #ea580c", background: "linear-gradient(to bottom right, #1a0f0a, #0a0a0f)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
+                      <div>
+                        <div style={{ ...S.sTitle, color: "#f59e0b", marginBottom: "0.2rem" }}>Deep Scan (Golden Patterns)</div>
+                        <div style={{ fontSize: "0.68rem", color: "#a0a0c0" }}>Recherche les seuils générant +80% de réussite.</div>
+                      </div>
+                      <button 
+                        style={{ ...S.btn, background: "linear-gradient(135deg, #f59e0b, #ea580c)", color: "white", fontWeight: 600 }} 
+                        onClick={runDeepScan} 
+                        disabled={isScanning}
+                      >
+                        {isScanning ? "Analyse en cours..." : "✨ Lancer le Deep Scan"}
+                      </button>
+                    </div>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+                      <span style={{ fontSize: "0.72rem", color: "#6b6b88" }}>Échantillon min. :</span>
+                      <input className="inp" type="number" min="2" max="50" value={minMatchesDeep} onChange={(e) => setMinMatchesDeep(parseInt(e.target.value) || 5)} style={{ width: 70, borderColor: "#ea580c" }} />
+                      <span style={{ fontSize: "0.72rem", color: "#6b6b88" }}>matchs</span>
+                    </div>
+                
+                    {showDeepScan && !isScanning && (
+                      <div style={{ marginTop: "1.25rem" }}>
+                        <div style={{ borderTop: "1px solid #3a1a0a", marginBottom: "1rem" }} />
+                        {goldenPatterns.length === 0 ? (
+                          <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem" }}>Aucun pattern à +80% trouvé avec cet échantillon.</div>
+                        ) : goldenPatterns.map((p, i) => (
+                          <div key={i} style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                              <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
+                              <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
+                            </div>
+                            <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>
+                              {p.key}
+                            </div>
+                            <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                              <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                              <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                              <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* History list */}
                 <div style={S.section}>
                   <div style={S.sTitle}>Matchs ({history.length})</div>
