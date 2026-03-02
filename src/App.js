@@ -55,11 +55,27 @@ function getOddsBracket(odd) {
 }
 
 function computeRuleStats(rule, history, thUp, thDown) {
+  // On utilise les seuils du Deep Scan s'ils existent, sinon les seuils globaux
+  const ruleThUp = rule.custom_thUp || thUp;
+  const ruleThDown = rule.custom_thDown || thDown;
+
   const matchingMatches = history.filter((m) => {
-    const m1 = rule.p1_movement === "any" || (m.a1.movement === rule.p1_movement && m.a1.breach === rule.p1_breach);
-    const m2 = rule.p2_movement === "any" || (m.a2.movement === rule.p2_movement && m.a2.breach === rule.p2_breach);
+    // Si c'est un Golden Pattern, on filtre d'abord par la tranche de cotes (bracket)
+    if (rule.custom_bracket) {
+      const p1Fav = getP1IsFav(m);
+      const favBefore = p1Fav ? m.a1.before : m.a2.before;
+      if (getOddsBracket(favBefore) !== rule.custom_bracket) return false;
+    }
+
+    // On recalcule l'analyse de l'historique avec les seuils de la règle
+    const a1 = analyzeOdds(m.a1.before, m.a1.after, ruleThUp, ruleThDown);
+    const a2 = analyzeOdds(m.a2.before, m.a2.after, ruleThUp, ruleThDown);
+
+    const m1 = rule.p1_movement === "any" || (a1.movement === rule.p1_movement && a1.breach === rule.p1_breach);
+    const m2 = rule.p2_movement === "any" || (a2.movement === rule.p2_movement && a2.breach === rule.p2_breach);
     return m1 && m2;
   });
+
   if (matchingMatches.length === 0) return null;
 
   let correctCount = 0;
@@ -83,6 +99,16 @@ function computeRuleStats(rule, history, thUp, thDown) {
       if (correct) roundStats[rnd].correct++;
     }
   });
+
+  const total = matchingMatches.length;
+  const confidence = Math.round((correctCount / total) * 100);
+  const avgWinOdd = winOdds.length ? (winOdds.reduce((a, b) => a + b, 0) / winOdds.length).toFixed(2) : "—";
+  const topRounds = Object.entries(roundStats)
+    .sort((a, b) => b[1].total - a[1].total).slice(0, 4)
+    .map(([rnd, s]) => ({ rnd, total: s.total, pct: Math.round((s.correct / s.total) * 100) }));
+  const totalWithRound = Object.values(roundStats).reduce((acc, s) => acc + s.total, 0);
+  return { total, correctCount, confidence, avgWinOdd, topRounds, totalWithRound };
+}
 
   const total = matchingMatches.length;
   const confidence = Math.round((correctCount / total) * 100);
@@ -201,10 +227,29 @@ export default function App() {
   const hasAnalysis = a1 && a2;
   const p1IsFavorite = hasAnalysis && a1.before < a2.before;
 
-  const matchedRules = hasAnalysis ? rules.filter((r) => {
+const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
-    const m1 = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
-    const m2 = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
+
+    // Si c'est une règle standard (créée manuellement, sans seuils personnalisés)
+    if (!r.custom_thUp) {
+      const m1 = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
+      const m2 = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
+      return m1 && m2;
+    }
+
+    // --- Si c'est un Golden Pattern (issu du Deep Scan) ---
+    // 1. On vérifie que la cote du favori actuel est dans le bon Bracket
+    const favBefore = p1IsFavorite ? parseFloat(p1.before) : parseFloat(p2.before);
+    const currentBracket = getOddsBracket(favBefore);
+    if (r.custom_bracket !== currentBracket) return false;
+
+    // 2. On simule l'analyse avec les seuils spécifiques de cette règle en or
+    const customA1 = analyzeOdds(parseFloat(p1.before), parseFloat(p1.after), r.custom_thUp, r.custom_thDown);
+    const customA2 = analyzeOdds(parseFloat(p2.before), parseFloat(p2.after), r.custom_thUp, r.custom_thDown);
+
+    const m1 = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
+    const m2 = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
+    
     return m1 && m2;
   }) : [];
 
