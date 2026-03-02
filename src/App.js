@@ -220,27 +220,39 @@ export default function App() {
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
 
-    // Si c'est une règle standard (créée manuellement, sans seuils personnalisés)
-    if (!r.custom_thUp) {
-      const m1 = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
-      const m2 = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
-      return m1 && m2;
-    }
-
-    // --- Si c'est un Golden Pattern (issu du Deep Scan) ---
-    // 1. On vérifie que la cote du favori actuel est dans le bon Bracket
+    // Variables communes pour vérifier le bracket
     const favBefore = p1IsFavorite ? parseFloat(p1.before) : parseFloat(p2.before);
     const currentBracket = getOddsBracket(favBefore);
+
+    // --- 1. Règle Standard (sans seuils personnalisés) ---
+    if (!r.custom_thUp) {
+      // Sens Normal : Input 1 = J1 Règle / Input 2 = J2 Règle
+      const m1_n = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
+      const m2_n = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
+      
+      // Sens Inversé : Input 1 = J2 Règle / Input 2 = J1 Règle
+      const m1_i = r.p2_movement === "any" || (a1.movement === r.p2_movement && a1.breach === r.p2_breach);
+      const m2_i = r.p1_movement === "any" || (a2.movement === r.p1_movement && a2.breach === r.p1_breach);
+      
+      return (m1_n && m2_n) || (m1_i && m2_i);
+    }
+
+    // --- 2. Golden Pattern (issu du Deep Scan) ---
     if (r.custom_bracket !== currentBracket) return false;
 
-    // 2. On simule l'analyse avec les seuils spécifiques de cette règle en or
+    // Calcul avec les seuils optimisés de la règle
     const customA1 = analyzeOdds(parseFloat(p1.before), parseFloat(p1.after), r.custom_thUp, r.custom_thDown);
     const customA2 = analyzeOdds(parseFloat(p2.before), parseFloat(p2.after), r.custom_thUp, r.custom_thDown);
 
-    const m1 = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
-    const m2 = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
+    // Sens Normal
+    const m1_n = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
+    const m2_n = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
     
-    return m1 && m2;
+    // Sens Inversé
+    const m1_i = r.p2_movement === "any" || (customA1.movement === r.p2_movement && customA1.breach === r.p2_breach);
+    const m2_i = r.p1_movement === "any" || (customA2.movement === r.p1_movement && customA2.breach === r.p1_breach);
+
+    return (m1_n && m2_n) || (m1_i && m2_i);
   }) : [];
 
   const addRule = () => {
