@@ -110,16 +110,6 @@ function computeRuleStats(rule, history, thUp, thDown) {
   return { total, correctCount, confidence, avgWinOdd, topRounds, totalWithRound };
 }
 
-  const total = matchingMatches.length;
-  const confidence = Math.round((correctCount / total) * 100);
-  const avgWinOdd = winOdds.length ? (winOdds.reduce((a, b) => a + b, 0) / winOdds.length).toFixed(2) : "—";
-  const topRounds = Object.entries(roundStats)
-    .sort((a, b) => b[1].total - a[1].total).slice(0, 4)
-    .map(([rnd, s]) => ({ rnd, total: s.total, pct: Math.round((s.correct / s.total) * 100) }));
-  const totalWithRound = Object.values(roundStats).reduce((acc, s) => acc + s.total, 0);
-  return { total, correctCount, confidence, avgWinOdd, topRounds, totalWithRound };
-}
-
 function OddsInput({ label, color, value, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
