@@ -361,7 +361,7 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
             const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
             const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
             
-            const k = `[${bracket}] J1:${a1.movement}(${a1.breach ? 'KO' : 'OK'}) | J2:${a2.movement}(${a2.breach ? 'KO' : 'OK'})`;
+            const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? 'KO' : 'OK'}) | Outsider:${a2.movement}(${a2.breach ? 'KO' : 'OK'})`;
             const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
 
             if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2 };
@@ -403,23 +403,31 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
     r.custom_thDown === p.thDown
   );
 
-  const addGoldenRule = (p) => {
-   const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
+const addGoldenRule = (p) => {
+    const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
     
-    saveRules([...rules, {
-      id: Date.now(),
-      label,
-      description: `Deep Scan — ${p.total} matchs, ${p.confidence}% réussite. Seuils Optis : Hausse >${p.thUp}, Baisse <${p.thDown}.`,
-      p1_movement: p.a1.movement, p1_breach: p.a1.breach,
-      p2_movement: p.a2.movement, p2_breach: p.a2.breach,
-      winner: p.winner,
-      active: true,
-      confidence: p.confidence,
-      // On sauvegarde les paramètres spécifiques à ce pattern
-      custom_thUp: p.thUp,
-      custom_thDown: p.thDown,
-      custom_bracket: p.bracket
-    }]);
+    // Utilisation de prevRules pour éviter le bug d'écrasement de React
+    setRules(prevRules => {
+      const updated = [...prevRules, {
+        id: Date.now() + Math.random(), // Sécurité anti-écrasement
+        label,
+        description: `Deep Scan — ${p.total} matchs, ${p.confidence}% réussite. Seuils Optis : Hausse >${p.thUp}, Baisse <${p.thDown}.`,
+        p1_movement: p.a1.movement, p1_breach: p.a1.breach,
+        p2_movement: p.a2.movement, p2_breach: p.a2.breach,
+        winner: p.winner,
+        active: true,
+        confidence: p.confidence,
+        custom_thUp: p.thUp,
+        custom_thDown: p.thDown,
+        custom_bracket: p.bracket
+      }];
+      
+      // Sauvegarde silencieuse en base de données
+      if (rulesRowId) {
+        sbSet("rules", rulesRowId, updated).catch(() => {});
+      }
+      return updated;
+    });
   };
 
   const normalizeHistory = () => {
@@ -858,7 +866,7 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
                         </div>
 
                         <div className="g2">
-                          {[{ label: "Joueur 1", a: m.a1, color: "#a78bfa", fav: p1Fav }, { label: "Joueur 2", a: m.a2, color: "#60a5fa", fav: !p1Fav }].map((p, i) => (
+                          {[{ label: "Favori", a: m.a1, color: "#a78bfa", fav: true }, { label: "Outsider", a: m.a2, color: "#60a5fa", fav: false }].map((p, i) => (
                             <div key={i} style={{ background: "#12121e", borderRadius: 8, padding: "0.75rem" }}>
                               <div style={{ fontSize: "0.7rem", color: p.color, marginBottom: "0.4rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                                 {p.label} <span style={{ color: p.fav ? "#fbbf24" : "#6b6b88" }}>({p.fav ? "Favori" : "Outsider"})</span>
@@ -908,7 +916,7 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
                       <div style={{ fontSize: "0.85rem", color: "#c4b5fd", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
                       {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", lineHeight: 1.5, marginBottom: "0.5rem" }}>{r.description}</div>}
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                      {[`Fav: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`, `Outsider: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`]
+                      {[`Favori: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`, `Outsider: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`]
                          .map((t, i) => <span key={i} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
                         <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>→ {winnerLabel(r.winner, true)} gagne</span>
                         {r.confidence && <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a78bfa" }}>🤖 {r.confidence}%</span>}
