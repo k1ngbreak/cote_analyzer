@@ -221,25 +221,31 @@ export default function App() {
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
 
+    // On isole les données du vrai favori et du vrai outsider selon la saisie
+    const favInput = p1IsFavorite ? a1 : a2;
+    const outInput = p1IsFavorite ? a2 : a1;
     const favBefore = p1IsFavorite ? parseFloat(p1.before) : parseFloat(p2.before);
     const currentBracket = getOddsBracket(favBefore);
 
-    // --- 1. Règle Standard (sans seuils personnalisés) ---
+    // --- 1. Règle Standard ---
     if (!r.custom_thUp) {
-      const m1 = r.p1_movement === "any" || (a1.movement === r.p1_movement && a1.breach === r.p1_breach);
-      const m2 = r.p2_movement === "any" || (a2.movement === r.p2_movement && a2.breach === r.p2_breach);
+      // On compare toujours le favInput au J1 de la règle (qui est le favori)
+      const m1 = r.p1_movement === "any" || (favInput.movement === r.p1_movement && favInput.breach === r.p1_breach);
+      const m2 = r.p2_movement === "any" || (outInput.movement === r.p2_movement && outInput.breach === r.p2_breach);
       return m1 && m2;
     }
 
-    // --- 2. Golden Pattern (issu du Deep Scan) ---
+    // --- 2. Golden Pattern ---
     if (r.custom_bracket !== currentBracket) return false;
 
-    // Calcul avec les seuils optimisés de la règle
     const customA1 = analyzeOdds(parseFloat(p1.before), parseFloat(p1.after), r.custom_thUp, r.custom_thDown);
     const customA2 = analyzeOdds(parseFloat(p2.before), parseFloat(p2.after), r.custom_thUp, r.custom_thDown);
 
-    const m1 = r.p1_movement === "any" || (customA1.movement === r.p1_movement && customA1.breach === r.p1_breach);
-    const m2 = r.p2_movement === "any" || (customA2.movement === r.p2_movement && customA2.breach === r.p2_breach);
+    const favCustom = p1IsFavorite ? customA1 : customA2;
+    const outCustom = p1IsFavorite ? customA2 : customA1;
+
+    const m1 = r.p1_movement === "any" || (favCustom.movement === r.p1_movement && favCustom.breach === r.p1_breach);
+    const m2 = r.p2_movement === "any" || (outCustom.movement === r.p2_movement && outCustom.breach === r.p2_breach);
 
     return m1 && m2;
   }) : [];
