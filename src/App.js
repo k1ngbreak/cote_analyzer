@@ -404,7 +404,7 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
   );
 
   const addGoldenRule = (p) => {
-    const label = `🔥 [${p.bracket}] J1 ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + J2 ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
+   const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
     
     saveRules([...rules, {
       id: Date.now(),
@@ -463,7 +463,7 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
 
   const addSuggested = (s) => {
     // s.winner est TOUJOURS l'outcome dominant (le + grand %)
-    const label = `J1 ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + J2 ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
+    const label = `Favori ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + Outsider ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
     const existing = existingRule(s);
     if (existing) {
       // Mettre à jour avec l'outcome dominant actuel + nouvelle confiance
@@ -908,8 +908,8 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
                       <div style={{ fontSize: "0.85rem", color: "#c4b5fd", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
                       {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", lineHeight: 1.5, marginBottom: "0.5rem" }}>{r.description}</div>}
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                        {[`J1: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`, `J2: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`]
-                          .map((t, i) => <span key={i} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
+                      {[`Fav: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`, `Outsider: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`]
+                         .map((t, i) => <span key={i} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
                         <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>→ {winnerLabel(r.winner, true)} gagne</span>
                         {r.confidence && <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a78bfa" }}>🤖 {r.confidence}%</span>}
                       </div>
