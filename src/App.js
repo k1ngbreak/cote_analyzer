@@ -210,8 +210,8 @@ export default function App() {
       const p1Fav = getP1IsFav(m);
       if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [] };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
-      const favOdd = p1Fav ? m.a1.before : m.a2.before;
-      const outsiderOdd = p1Fav ? m.a2.before : m.a1.before;
+      const favOdd = p1Fav ? m.a1.after : m.a2.after;
+      const outsiderOdd = p1Fav ? m.a2.after : m.a1.after;
       map[k].favOdds.push(favOdd);
       map[k].outsiderOdds.push(outsiderOdd);
       if (winnerIsFav) map[k].fav++;
