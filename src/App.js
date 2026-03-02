@@ -37,9 +37,10 @@ function analyzeOdds(before, after, thUp, thDown) {
   return { before, after, diff, movement, breach };
 }
 function getP1IsFav(m) {
-  if (m.p1IsFav !== undefined) return m.p1IsFav;
+  // Le favori est STRICTEMENT défini par la cote de clôture la plus basse
   return m.a1.after < m.a2.after;
 }
+
 function winnerLabel(winner, p1IsFav) {
   if (winner === "favori") return "Favori";
   if (winner === "outsider") return "Outsider";
@@ -215,7 +216,7 @@ export default function App() {
 
   const a1 = analyzeP(p1), a2 = analyzeP(p2);
   const hasAnalysis = a1 && a2;
-  const p1IsFavorite = hasAnalysis && a1.after < a2.after;
+  const p1IsFavorite = hasAnalysis && (parseFloat(p1.after) < parseFloat(p2.after));
 
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
