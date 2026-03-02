@@ -715,7 +715,7 @@ const addGoldenRule = (p) => {
                                 <div style={{ height: "100%", width: `${s.confidence}%`, background: "linear-gradient(90deg,#4ade80,#22c55e)", borderRadius: 3 }} />
                               </div>
                               <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
-                                {[`J1: ${s.meta.a1.movement === "up" ? "monte" : "baisse"} ${s.meta.a1.breach ? "⚠" : "✓"}`, `J2: ${s.meta.a2.movement === "up" ? "monte" : "baisse"} ${s.meta.a2.breach ? "⚠" : "✓"}`]
+                                {[`Favori: ${s.meta.a1.movement === "up" ? "monte" : "baisse"} ${s.meta.a1.breach ? "⚠" : "✓"}`, `Outsider: ${s.meta.a2.movement === "up" ? "monte" : "baisse"} ${s.meta.a2.breach ? "⚠" : "✓"}`]
                                   .map((t, j) => <span key={j} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
                                 <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>
                                   → {s.winner === "favori" ? "Favori" : "Outsider"} gagne
