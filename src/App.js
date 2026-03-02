@@ -195,10 +195,15 @@ export default function App() {
     history.forEach((m) => {
       const k = `${m.a1.movement}:${m.a1.breach}|${m.a2.movement}:${m.a2.breach}`;
       const p1Fav = getP1IsFav(m);
-      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [], roundStats: {} };
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [], roundStats: {}, winnerOddsWhenCorrect: [] };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
       map[k].favOdds.push(p1Fav ? m.a1.after : m.a2.after);
       map[k].outsiderOdds.push(p1Fav ? m.a2.after : m.a1.after);
+      // Track the winning odd only when prediction will be correct (determined after bestW)
+      const favFinalOdd = p1Fav ? m.a1.after : m.a2.after;
+      const outsiderFinalOdd = p1Fav ? m.a2.after : m.a1.after;
+      map[k]._winnerIsFavArr = map[k]._winnerIsFavArr || [];
+      map[k]._winnerIsFavArr.push({ winnerIsFav, favFinalOdd, outsiderFinalOdd });
       if (m.round && m.round.toString().trim()) {
         const rnd = m.round.toString().trim();
         if (!map[k].roundStats[rnd]) map[k].roundStats[rnd] = { win: 0, total: 0 };
@@ -215,6 +220,15 @@ export default function App() {
       const bestW = v.fav >= v.outsider ? "favori" : "outsider";
       const conf = Math.round((Math.max(v.fav, v.outsider) / total) * 100);
       // Top rounds by frequency
+      // Cote moyenne du gagnant prédit quand la prédiction est correcte
+      const dominantIsFav = bestW === "favori";
+      const oddsWhenCorrect = (v._winnerIsFavArr || [])
+        .filter(x => x.winnerIsFav === dominantIsFav)
+        .map(x => dominantIsFav ? x.favFinalOdd : x.outsiderFinalOdd);
+      const avgWinOddWhenCorrect = oddsWhenCorrect.length
+        ? (oddsWhenCorrect.reduce((a, b) => a + b, 0) / oddsWhenCorrect.length).toFixed(2)
+        : "—";
+
       // Rounds: sort by total occurrences, show win% for predicted winner
       const topRounds = Object.entries(v.roundStats)
         .sort((a, b) => b[1].total - a[1].total)
@@ -226,7 +240,7 @@ export default function App() {
           return { rnd, total: s.total, pct: winPct };
         });
       const totalWithRound = Object.values(v.roundStats).reduce((acc, s) => acc + s.total, 0);
-      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf, avgFavOdd: avg(v.favOdds), avgOutsiderOdd: avg(v.outsiderOdds), topRounds, totalWithRound });
+      if (conf >= extractConf) out.push({ ...v, total, winner: bestW, confidence: conf, avgFavOdd: avg(v.favOdds), avgOutsiderOdd: avg(v.outsiderOdds), avgWinOddWhenCorrect, topRounds, totalWithRound });
     });
     setSuggested(out.sort((a, b) => b.confidence - a.confidence));
     setShowSug(true);
@@ -234,19 +248,34 @@ export default function App() {
 
   const alreadyAdded = (s) => rules.some((r) =>
     r.p1_movement === s.meta.a1.movement && r.p1_breach === s.meta.a1.breach &&
-    r.p2_movement === s.meta.a2.movement && r.p2_breach === s.meta.a2.breach &&
-    r.winner === s.winner
+    r.p2_movement === s.meta.a2.movement && r.p2_breach === s.meta.a2.breach
+  );
+
+  const existingRule = (s) => rules.find((r) =>
+    r.p1_movement === s.meta.a1.movement && r.p1_breach === s.meta.a1.breach &&
+    r.p2_movement === s.meta.a2.movement && r.p2_breach === s.meta.a2.breach
   );
 
   const addSuggested = (s) => {
+    // s.winner est TOUJOURS l'outcome dominant (le + grand %)
     const label = `J1 ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + J2 ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
-    saveRules([...rules, {
-      id: Date.now(), label,
-      description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
-      p1_movement: s.meta.a1.movement, p1_breach: s.meta.a1.breach,
-      p2_movement: s.meta.a2.movement, p2_breach: s.meta.a2.breach,
-      winner: s.winner, active: true, confidence: s.confidence,
-    }]);
+    const existing = existingRule(s);
+    if (existing) {
+      // Mettre à jour avec l'outcome dominant actuel + nouvelle confiance
+      saveRules(rules.map(r => r.id === existing.id ? {
+        ...r, label, winner: s.winner,
+        description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
+        confidence: s.confidence,
+      } : r));
+    } else {
+      saveRules([...rules, {
+        id: Date.now(), label,
+        description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
+        p1_movement: s.meta.a1.movement, p1_breach: s.meta.a1.breach,
+        p2_movement: s.meta.a2.movement, p2_breach: s.meta.a2.breach,
+        winner: s.winner, active: true, confidence: s.confidence,
+      }]);
+    }
   };
 
   const S = {
@@ -438,6 +467,9 @@ export default function App() {
                               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
                                 <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>Cote moy. Favori : {s.avgFavOdd}</span>
                                 <span style={{ background: "#0a1018", border: "1px solid #1e3a5e", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#93c5fd" }}>Cote moy. Outsider : {s.avgOutsiderOdd}</span>
+                              </div>
+                              <div style={{ marginBottom: "0.4rem" }}>
+                                <span style={{ background: "#0f1a0f", border: "1px solid #166534", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#4ade80", fontWeight: 600 }}>✓ Cote moy. {s.winner === "favori" ? "Favori" : "Outsider"} quand correct : {s.avgWinOddWhenCorrect}</span>
                               </div>
                               {/* Rounds fréquents */}
                               {s.topRounds && s.topRounds.length > 0 && (
