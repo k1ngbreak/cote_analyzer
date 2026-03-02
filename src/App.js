@@ -38,7 +38,7 @@ function analyzeOdds(before, after, thUp, thDown) {
 }
 function getP1IsFav(m) {
   if (m.p1IsFav !== undefined) return m.p1IsFav;
-  return m.a1.before < m.a2.before;
+  return m.a1.after < m.a2.after;
 }
 function winnerLabel(winner, p1IsFav) {
   if (winner === "favori") return "Favori";
@@ -172,7 +172,7 @@ export default function App() {
       label: hLabel || `Match #${history.length + 1}`,
       a1: ma1, a2: ma2,
       winner: hWinner,
-      p1IsFav: b1 < b2,
+      p1IsFav: af1 < af2,
       round: hRound.trim() || "",
       date: new Date().toLocaleDateString("fr-FR"),
     };
