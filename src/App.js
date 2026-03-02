@@ -215,7 +215,7 @@ export default function App() {
 
   const a1 = analyzeP(p1), a2 = analyzeP(p2);
   const hasAnalysis = a1 && a2;
-  const p1IsFavorite = hasAnalysis && a1.before < a2.before;
+  const p1IsFavorite = hasAnalysis && a1.after < a2.after;
 
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
