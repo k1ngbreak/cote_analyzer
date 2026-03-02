@@ -510,6 +510,11 @@ const addGoldenRule = (p) => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse-gold {
+          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #0a0a0f; color: #e8e6f0; font-family: 'IBM Plex Mono', monospace; }
         .inp, select, textarea { font-family: 'IBM Plex Mono', monospace !important; background: #0a0a0f !important; color: #e8e6f0 !important; -webkit-appearance: none; appearance: none; border: 1px solid #2a2a3a; border-radius: 6px; padding: 0.6rem 0.75rem; width: 100%; font-size: 0.9rem; outline: none; }
@@ -595,12 +600,20 @@ const addGoldenRule = (p) => {
                       <div>
                         {matchedRules.map((r) => {
                           const stats = computeRuleStats(r, history, thresholdUp, thresholdDown);
+                          const isGolden = stats && stats.confidence >= 80;
+                          
                           return (
-                            <div key={r.id} style={{ background: "#0d1f0d", border: "1px solid #1e3a1e", borderRadius: 8, padding: "0.85rem 1rem", marginBottom: "0.5rem" }}>
-                              <div style={{ fontSize: "0.82rem", color: "#86efac", fontWeight: 500, marginBottom: "0.3rem" }}>{r.label}</div>
-                              {r.description && <div style={{ fontSize: "0.72rem", color: "#6b6b88", marginBottom: "0.5rem" }}>{r.description}</div>}
-                              <div style={{ fontSize: "0.78rem", color: "#6b6b88", marginBottom: "0.75rem" }}>
-                                Prédiction : <strong style={{ color: "#fbbf24" }}>{winnerLabel(r.winner, p1IsFavorite)} gagne</strong>
+                            <div key={r.id} style={{ 
+                              background: isGolden ? "linear-gradient(135deg, #2a1600, #140a00)" : "#0d1f0d", 
+                              border: `1px solid ${isGolden ? "#f59e0b" : "#1e3a1e"}`, 
+                              borderRadius: 8, 
+                              padding: "0.85rem 1rem", 
+                              marginBottom: "0.75rem",
+                              animation: isGolden ? "pulse-gold 2s infinite" : "none"
+                            }}>
+                              <div style={{ fontSize: "0.85rem", color: isGolden ? "#fbbf24" : "#86efac", fontWeight: 700, marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                                {isGolden && <span style={{ background: "#f59e0b", color: "#451a03", padding: "0.1rem 0.4rem", borderRadius: 4, fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Signal Fort</span>}
+                                {r.label}
                               </div>
                               
                               {/* Statistiques de la règle */}
