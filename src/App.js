@@ -64,8 +64,8 @@ function computeRuleStats(rule, history, thUp, thDown) {
     // Si c'est un Golden Pattern, on filtre d'abord par la tranche de cotes (bracket)
     if (rule.custom_bracket) {
       const p1Fav = getP1IsFav(m);
-      const favBefore = p1Fav ? m.a1.before : m.a2.before;
-      if (getOddsBracket(favBefore) !== rule.custom_bracket) return false;
+      const favAfter = p1Fav ? m.a1.after : m.a2.after;
+      if (getOddsBracket(favAfter) !== rule.custom_bracket) return false;
     }
 
     // On recalcule l'analyse de l'historique avec les seuils de la règle
@@ -224,8 +224,8 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
     // On isole les données du vrai favori et du vrai outsider selon la saisie
     const favInput = p1IsFavorite ? a1 : a2;
     const outInput = p1IsFavorite ? a2 : a1;
-    const favBefore = p1IsFavorite ? parseFloat(p1.before) : parseFloat(p2.before);
-    const currentBracket = getOddsBracket(favBefore);
+    const favAfter = p1IsFavorite ? parseFloat(p1.after) : parseFloat(p2.after);
+    const currentBracket = getOddsBracket(favAfter);
 
     // --- 1. Règle Standard ---
     if (!r.custom_thUp) {
@@ -355,8 +355,8 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
 
           history.forEach(m => {
             const p1Fav = getP1IsFav(m);
-            const favBefore = p1Fav ? m.a1.before : m.a2.before;
-            const bracket = getOddsBracket(favBefore);
+            const favAfter = p1Fav ? m.a1.after : m.a2.after;
+            const bracket = getOddsBracket(favAfter);
             
             const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
             const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
