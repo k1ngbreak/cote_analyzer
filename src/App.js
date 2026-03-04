@@ -37,7 +37,6 @@ function analyzeOdds(before, after, thUp, thDown) {
   return { before, after, diff, movement, breach };
 }
 function getP1IsFav(m) {
-  // Le favori est STRICTEMENT défini par la cote de clôture la plus basse
   return m.a1.after < m.a2.after;
 }
 
@@ -56,19 +55,16 @@ function getOddsBracket(odd) {
 }
 
 function computeRuleStats(rule, history, thUp, thDown) {
-  // On utilise les seuils du Deep Scan s'ils existent, sinon les seuils globaux
   const ruleThUp = rule.custom_thUp || thUp;
   const ruleThDown = rule.custom_thDown || thDown;
 
   const matchingMatches = history.filter((m) => {
-    // Si c'est un Golden Pattern, on filtre d'abord par la tranche de cotes (bracket)
     if (rule.custom_bracket) {
       const p1Fav = getP1IsFav(m);
       const favAfter = p1Fav ? m.a1.after : m.a2.after;
       if (getOddsBracket(favAfter) !== rule.custom_bracket) return false;
     }
 
-    // On recalcule l'analyse de l'historique avec les seuils de la règle
     const a1 = analyzeOdds(m.a1.before, m.a1.after, ruleThUp, ruleThDown);
     const a2 = analyzeOdds(m.a2.before, m.a2.after, ruleThUp, ruleThDown);
 
@@ -168,11 +164,9 @@ export default function App() {
   const [suggested, setSuggested] = useState([]);
   const [showSug, setShowSug] = useState(false);
 
-  // Inline round editing state
   const [editingRoundId, setEditingRoundId] = useState(null);
   const [editingRoundVal, setEditingRoundVal] = useState("");
 
-  // --- States pour le Deep Scan ---
   const [goldenPatterns, setGoldenPatterns] = useState([]);
   const [showDeepScan, setShowDeepScan] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -221,21 +215,17 @@ export default function App() {
 const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.active) return false;
 
-    // On isole les données du vrai favori et du vrai outsider selon la saisie
     const favInput = p1IsFavorite ? a1 : a2;
     const outInput = p1IsFavorite ? a2 : a1;
     const favAfter = p1IsFavorite ? parseFloat(p1.after) : parseFloat(p2.after);
     const currentBracket = getOddsBracket(favAfter);
 
-    // --- 1. Règle Standard ---
     if (!r.custom_thUp) {
-      // On compare toujours le favInput au J1 de la règle (qui est le favori)
       const m1 = r.p1_movement === "any" || (favInput.movement === r.p1_movement && favInput.breach === r.p1_breach);
       const m2 = r.p2_movement === "any" || (outInput.movement === r.p2_movement && outInput.breach === r.p2_breach);
       return m1 && m2;
     }
 
-    // --- 2. Golden Pattern ---
     if (r.custom_bracket !== currentBracket) return false;
 
     const customA1 = analyzeOdds(parseFloat(p1.before), parseFloat(p1.after), r.custom_thUp, r.custom_thDown);
@@ -277,7 +267,6 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
     setShowSug(false);
   };
 
-  // Save round edit inline
   const saveRoundEdit = (matchId) => {
     const updated = history.map(m => m.id === matchId ? { ...m, round: editingRoundVal.trim() } : m);
     saveHistory(updated);
@@ -288,15 +277,18 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
   const extractPatterns = () => {
     const map = {};
     history.forEach((m) => {
-      const k = `${m.a1.movement}:${m.a1.breach}|${m.a2.movement}:${m.a2.breach}`;
+      // ✅ FIX: On normalise toujours en favori/outsider avant de créer la clé
       const p1Fav = getP1IsFav(m);
-      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: m, favOdds: [], outsiderOdds: [], roundStats: {}, winnerOddsWhenCorrect: [] };
+      const favA = p1Fav ? m.a1 : m.a2;
+      const outA = p1Fav ? m.a2 : m.a1;
+      const k = `${favA.movement}:${favA.breach}|${outA.movement}:${outA.breach}`;
+
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: { a1: favA, a2: outA }, favOdds: [], outsiderOdds: [], roundStats: {}, winnerOddsWhenCorrect: [] };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
-      map[k].favOdds.push(p1Fav ? m.a1.after : m.a2.after);
-      map[k].outsiderOdds.push(p1Fav ? m.a2.after : m.a1.after);
-      // Track the winning odd only when prediction will be correct (determined after bestW)
       const favFinalOdd = p1Fav ? m.a1.after : m.a2.after;
       const outsiderFinalOdd = p1Fav ? m.a2.after : m.a1.after;
+      map[k].favOdds.push(favFinalOdd);
+      map[k].outsiderOdds.push(outsiderFinalOdd);
       map[k]._winnerIsFavArr = map[k]._winnerIsFavArr || [];
       map[k]._winnerIsFavArr.push({ winnerIsFav, favFinalOdd, outsiderFinalOdd });
       if (m.round && m.round.toString().trim()) {
@@ -314,8 +306,6 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
       const total = v.fav + v.outsider;
       const bestW = v.fav >= v.outsider ? "favori" : "outsider";
       const conf = Math.round((Math.max(v.fav, v.outsider) / total) * 100);
-      // Top rounds by frequency
-      // Cote moyenne du gagnant prédit quand la prédiction est correcte
       const dominantIsFav = bestW === "favori";
       const oddsWhenCorrect = (v._winnerIsFavArr || [])
         .filter(x => x.winnerIsFav === dominantIsFav)
@@ -324,7 +314,6 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
         ? (oddsWhenCorrect.reduce((a, b) => a + b, 0) / oddsWhenCorrect.length).toFixed(2)
         : "—";
 
-      // Rounds: sort by total occurrences, show win% for predicted winner
       const topRounds = Object.entries(v.roundStats)
         .sort((a, b) => b[1].total - a[1].total)
         .slice(0, 4)
@@ -406,10 +395,9 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
 const addGoldenRule = (p) => {
     const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
     
-    // Utilisation de prevRules pour éviter le bug d'écrasement de React
     setRules(prevRules => {
       const updated = [...prevRules, {
-        id: Date.now() + Math.random(), // Sécurité anti-écrasement
+        id: Date.now() + Math.random(),
         label,
         description: `Deep Scan — ${p.total} matchs, ${p.confidence}% réussite. Seuils Optis : Hausse >${p.thUp}, Baisse <${p.thDown}.`,
         p1_movement: p.a1.movement, p1_breach: p.a1.breach,
@@ -422,7 +410,6 @@ const addGoldenRule = (p) => {
         custom_bracket: p.bracket
       }];
       
-      // Sauvegarde silencieuse en base de données
       if (rulesRowId) {
         sbSet("rules", rulesRowId, updated).catch(() => {});
       }
@@ -436,22 +423,20 @@ const addGoldenRule = (p) => {
     const fixedHistory = history.map(m => {
       const p1Fav = getP1IsFav(m);
       
-      // Si J1 était déjà le favori, on ne touche à rien (on force juste le flag)
       if (p1Fav) {
         return { ...m, p1IsFav: true }; 
       }
 
-      // Si J2 était le favori, on croise toutes les données !
       let newWinner = m.winner;
       if (m.winner === "p1") newWinner = "p2";
       else if (m.winner === "p2") newWinner = "p1";
 
       return {
         ...m,
-        a1: m.a2,       // L'analyse du J2 (qui était favori) passe en J1
-        a2: m.a1,       // L'analyse du J1 (qui était outsider) passe en J2
+        a1: m.a2,
+        a2: m.a1,
         winner: newWinner,
-        p1IsFav: true   // J1 devient le favori officiel
+        p1IsFav: true
       };
     });
 
@@ -470,11 +455,9 @@ const addGoldenRule = (p) => {
   );
 
   const addSuggested = (s) => {
-    // s.winner est TOUJOURS l'outcome dominant (le + grand %)
     const label = `Favori ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + Outsider ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
     const existing = existingRule(s);
     if (existing) {
-      // Mettre à jour avec l'outcome dominant actuel + nouvelle confiance
       saveRules(rules.map(r => r.id === existing.id ? {
         ...r, label, winner: s.winner,
         description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
@@ -532,7 +515,6 @@ const addGoldenRule = (p) => {
 
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "2rem 1.5rem 4rem" }}>
 
-        {/* Header */}
         <div style={{ marginBottom: "2rem", borderBottom: "1px solid #2a2a3a", paddingBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <div style={{ fontFamily: "Syne, sans-serif", fontSize: "2rem", fontWeight: 800, background: "linear-gradient(135deg, #a78bfa, #60a5fa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>ODDS ANALYZER</div>
@@ -546,7 +528,6 @@ const addGoldenRule = (p) => {
           </div>
         </div>
 
-        {/* Tabs */}
         <div style={{ display: "flex", marginBottom: "2rem", border: "1px solid #2a2a3a", borderRadius: 8, overflow: "hidden" }}>
           {tabs.map(({ key, label, count }) => (
             <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "0.7rem 0.4rem", background: tab === key ? "#1a1a2e" : "transparent", border: "none", borderBottom: tab === key ? "2px solid #a78bfa" : "2px solid transparent", color: tab === key ? "#a78bfa" : "#6b6b88", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.7rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em" }}>
@@ -560,7 +541,6 @@ const addGoldenRule = (p) => {
 
         {!loading && (
           <>
-            {/* ── ANALYZE ── */}
             {tab === "analyze" && (
               <>
                 <div style={S.section}>
@@ -574,7 +554,6 @@ const addGoldenRule = (p) => {
                   <div style={S.section}>
                     <div style={S.sTitle}>Résultat</div>
                 
-                    {/* 1. Affichage des cartes des deux joueurs */}
                     {[
                       { label: "Joueur 1", color: "#a78bfa", a: a1, fav: p1IsFavorite },
                       { label: "Joueur 2", color: "#60a5fa", a: a2, fav: !p1IsFavorite },
@@ -595,7 +574,6 @@ const addGoldenRule = (p) => {
                       </div>
                     ))}
                 
-                    {/* 2. Affichage conditionnel des règles correspondantes */}
                     {matchedRules.length > 0 ? (
                       <div>
                         {matchedRules.map((r) => {
@@ -616,7 +594,6 @@ const addGoldenRule = (p) => {
                                 {r.label}
                               </div>
                               
-                              {/* Statistiques de la règle */}
                               {stats ? (
                                 <div style={{ borderTop: "1px solid #1a3a1a", paddingTop: "0.65rem" }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
@@ -668,7 +645,6 @@ const addGoldenRule = (p) => {
               </>
             )}
 
-            {/* ── HISTORY ── */}
             {tab === "history" && (
               <>
                 <div style={S.section}>
@@ -703,7 +679,6 @@ const addGoldenRule = (p) => {
                   </div>
                 </div>
 
-                {/* Pattern detection */}
                 {history.length >= 2 && (
                   <div style={S.section}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
@@ -742,7 +717,6 @@ const addGoldenRule = (p) => {
                               <div style={{ marginBottom: "0.4rem" }}>
                                 <span style={{ background: "#0f1a0f", border: "1px solid #166534", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#4ade80", fontWeight: 600 }}>✓ Cote moy. {s.winner === "favori" ? "Favori" : "Outsider"} quand correct : {s.avgWinOddWhenCorrect}</span>
                               </div>
-                              {/* Rounds fréquents */}
                               {s.topRounds && s.topRounds.length > 0 && (
                                 <div style={{ marginTop: "0.3rem" }}>
                                   <span style={{ fontSize: "0.62rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Rounds ({s.totalWithRound}/{s.total} matchs renseignés) : </span>
@@ -772,7 +746,6 @@ const addGoldenRule = (p) => {
                   </div>
                 )}
 
-                {/* --- DEEP SCAN UI --- */}
                 {history.length >= 2 && (
                   <div style={{ ...S.section, border: "1px solid #ea580c", background: "linear-gradient(to bottom right, #1a0f0a, #0a0a0f)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
@@ -802,33 +775,33 @@ const addGoldenRule = (p) => {
                           <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem" }}>Aucun pattern à +80% trouvé avec cet échantillon.</div>
                         ) : goldenPatterns.map((p, i) => (
                           <div key={i} style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
-                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
-                                        <div>
-                                          <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
-                                          <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
-                                        </div>
-                                        <button
-                                          style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none" }}
-                                          onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
-                                        >
-                                          {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
-                                        </button>
-                                      </div>
-                                      <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>
-                                        {p.key}
-                                      </div>
-                                      <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                                        <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
-                                        <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
-                                        <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
-                                      </div>
-                                    </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                              <div>
+                                <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
+                                <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
+                              </div>
+                              <button
+                                style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none" }}
+                                onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
+                              >
+                                {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
+                              </button>
+                            </div>
+                            <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>
+                              {p.key}
+                            </div>
+                            <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                              <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                              <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                              <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
-                {/* History list */}
+
                 <div style={S.section}>
                   <div style={S.sTitle}>Matchs ({history.length})</div>
                   {history.length === 0 ? (
@@ -850,7 +823,6 @@ const addGoldenRule = (p) => {
                           </div>
                         </div>
 
-                        {/* Round inline editor */}
                         <div style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.65rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Round :</span>
                           {isEditingRound ? (
@@ -896,7 +868,6 @@ const addGoldenRule = (p) => {
               </>
             )}
 
-            {/* ── KB ── */}
             {tab === "kb" && (
               <div style={S.section}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -944,7 +915,6 @@ const addGoldenRule = (p) => {
               </div>
             )}
 
-            {/* ── SETTINGS ── */}
             {tab === "settings" && (
               <div style={S.section}>
                 <div style={S.sTitle}>Configuration des seuils</div>
@@ -954,24 +924,24 @@ const addGoldenRule = (p) => {
                     <input className="inp" type="number" step="0.01" min="0.01" value={thresholdUp} onChange={(e) => setThresholdUp(parseFloat(e.target.value) || 0.34)} />
                     <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.4rem" }}>Actuel : diff &gt; {thresholdUp} = non-respecté</div>
                   </div>
-                  <div style={{ ...S.section, marginTop: "1.25rem", border: "1px solid #7f1d1d", background: "#2a0a0a" }}>
-                <div style={{ ...S.sTitle, color: "#f87171" }}>Maintenance de la Base de Données</div>
-                <div style={{ fontSize: "0.78rem", color: "#fca5a5", marginBottom: "1rem", lineHeight: 1.5 }}>
-                  Utilise ce bouton si tu as saisi des matchs où le Favori était en Joueur 2. 
-                  L'outil va scanner tout ton historique et inverser les données pour que le Favori soit TOUJOURS en Joueur 1.
-                </div>
-                <button 
-                  style={{ ...S.btn, background: "#7f1d1d", color: "white" }} 
-                  onClick={normalizeHistory}
-                >
-                  🧹 Normaliser l'historique (Forcer Fav = J1)
-                </button>
-              </div>
                   <div>
                     <label style={S.label}>▼ Baisse — non-respecté si |diff| &lt; X</label>
                     <input className="inp" type="number" step="0.01" min="0.01" value={thresholdDown} onChange={(e) => setThresholdDown(parseFloat(e.target.value) || 0.14)} />
                     <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginTop: "0.4rem" }}>Actuel : |diff| &lt; {thresholdDown} = non-respecté</div>
                   </div>
+                </div>
+                <div style={{ ...S.section, marginTop: "1.25rem", border: "1px solid #7f1d1d", background: "#2a0a0a" }}>
+                  <div style={{ ...S.sTitle, color: "#f87171" }}>Maintenance de la Base de Données</div>
+                  <div style={{ fontSize: "0.78rem", color: "#fca5a5", marginBottom: "1rem", lineHeight: 1.5 }}>
+                    Utilise ce bouton si tu as saisi des matchs où le Favori était en Joueur 2. 
+                    L'outil va scanner tout ton historique et inverser les données pour que le Favori soit TOUJOURS en Joueur 1.
+                  </div>
+                  <button 
+                    style={{ ...S.btn, background: "#7f1d1d", color: "white" }} 
+                    onClick={normalizeHistory}
+                  >
+                    🧹 Normaliser l'historique (Forcer Fav = J1)
+                  </button>
                 </div>
               </div>
             )}
