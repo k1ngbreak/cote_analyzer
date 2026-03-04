@@ -59,10 +59,17 @@ function computeRuleStats(rule, history, thUp, thDown) {
   const ruleThDown = rule.custom_thDown || thDown;
 
   const matchingMatches = history.filter((m) => {
+    // Filtre bracket (Golden Pattern)
     if (rule.custom_bracket) {
       const p1Fav = getP1IsFav(m);
       const favAfter = p1Fav ? m.a1.after : m.a2.after;
       if (getOddsBracket(favAfter) !== rule.custom_bracket) return false;
+    }
+
+    // Filtre last_winner — on ignore les matchs sans valeur renseignée
+    if (rule.last_winner) {
+      if (!m.lastWinner) return false;
+      if (m.lastWinner !== rule.last_winner) return false;
     }
 
     const a1 = analyzeOdds(m.a1.before, m.a1.after, ruleThUp, ruleThDown);
