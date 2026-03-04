@@ -159,6 +159,9 @@ export default function App() {
   const [hWinner, setHWinner] = useState("p1");
   const [hLabel, setHLabel] = useState("");
   const [hRound, setHRound] = useState("");
+  const [hLastWinner, setHLastWinner] = useState("favori");
+  // Pour l'onglet Analyser : qui a gagné le dernier match entre ces deux joueurs
+  const [lastWinnerInput, setLastWinnerInput] = useState("favori");
 
   const [extractConf, setExtractConf] = useState(70);
   const [suggested, setSuggested] = useState([]);
@@ -223,7 +226,9 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
     if (!r.custom_thUp) {
       const m1 = r.p1_movement === "any" || (favInput.movement === r.p1_movement && favInput.breach === r.p1_breach);
       const m2 = r.p2_movement === "any" || (outInput.movement === r.p2_movement && outInput.breach === r.p2_breach);
-      return m1 && m2;
+      // Filtre lastWinner si la règle le spécifie
+      const m3 = !r.last_winner || r.last_winner === lastWinnerInput;
+      return m1 && m2 && m3;
     }
 
     if (r.custom_bracket !== currentBracket) return false;
@@ -236,8 +241,9 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
 
     const m1 = r.p1_movement === "any" || (favCustom.movement === r.p1_movement && favCustom.breach === r.p1_breach);
     const m2 = r.p2_movement === "any" || (outCustom.movement === r.p2_movement && outCustom.breach === r.p2_breach);
+    const m3 = !r.last_winner || r.last_winner === lastWinnerInput;
 
-    return m1 && m2;
+    return m1 && m2 && m3;
   }) : [];
 
   const addRule = () => {
@@ -257,13 +263,14 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
       label: hLabel || `Match #${history.length + 1}`,
       a1: ma1, a2: ma2,
       winner: hWinner,
+      lastWinner: hLastWinner,
       p1IsFav: af1 < af2,
       round: hRound.trim() || "",
       date: new Date().toLocaleDateString("fr-FR"),
     };
     saveHistory([entry, ...history]);
     setHP1({ before: "", after: "" }); setHP2({ before: "", after: "" });
-    setHLabel(""); setHWinner("p1"); setHRound("");
+    setHLabel(""); setHWinner("p1"); setHRound(""); setHLastWinner("favori");
     setShowSug(false);
   };
 
@@ -281,9 +288,10 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
       const p1Fav = getP1IsFav(m);
       const favA = p1Fav ? m.a1 : m.a2;
       const outA = p1Fav ? m.a2 : m.a1;
-      const k = `${favA.movement}:${favA.breach}|${outA.movement}:${outA.breach}`;
+      const lastW = m.lastWinner || "inconnu";
+      const k = `${favA.movement}:${favA.breach}|${outA.movement}:${outA.breach}|last:${lastW}`;
 
-      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: { a1: favA, a2: outA }, favOdds: [], outsiderOdds: [], roundStats: {}, winnerOddsWhenCorrect: [] };
+      if (!map[k]) map[k] = { fav: 0, outsider: 0, meta: { a1: favA, a2: outA }, lastWinner: lastW, favOdds: [], outsiderOdds: [], roundStats: {}, winnerOddsWhenCorrect: [] };
       const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
       const favFinalOdd = p1Fav ? m.a1.after : m.a2.after;
       const outsiderFinalOdd = p1Fav ? m.a2.after : m.a1.after;
@@ -350,10 +358,11 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
             const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
             const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
             
-            const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? 'KO' : 'OK'}) | Outsider:${a2.movement}(${a2.breach ? 'KO' : 'OK'})`;
+            const lastW = m.lastWinner || "inconnu";
+            const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? 'KO' : 'OK'}) | Outsider:${a2.movement}(${a2.breach ? 'KO' : 'OK'}) | LastWin=${lastW}`;
             const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
 
-            if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2 };
+            if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2, lastWinner: lastW };
             if (winnerIsFav) map[k].fav++;
             else map[k].outsider++;
           });
@@ -393,7 +402,8 @@ const matchedRules = hasAnalysis ? rules.filter((r) => {
   );
 
 const addGoldenRule = (p) => {
-    const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"}) → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
+    const lwLabel = p.lastWinner && p.lastWinner !== "inconnu" ? ` + Dernier:${p.lastWinner === "favori" ? "Fav" : "Out"}` : "";
+    const label = `🔥 [${p.bracket}] Favori ${p.a1.movement === "up" ? "monte" : "baisse"} (${p.a1.breach ? "KO" : "OK"}) + Outsider ${p.a2.movement === "up" ? "monte" : "baisse"} (${p.a2.breach ? "KO" : "OK"})${lwLabel} → ${p.winner === "favori" ? "Favori" : "Outsider"}`;
     
     setRules(prevRules => {
       const updated = [...prevRules, {
@@ -402,6 +412,7 @@ const addGoldenRule = (p) => {
         description: `Deep Scan — ${p.total} matchs, ${p.confidence}% réussite. Seuils Optis : Hausse >${p.thUp}, Baisse <${p.thDown}.`,
         p1_movement: p.a1.movement, p1_breach: p.a1.breach,
         p2_movement: p.a2.movement, p2_breach: p.a2.breach,
+        last_winner: p.lastWinner && p.lastWinner !== "inconnu" ? p.lastWinner : undefined,
         winner: p.winner,
         active: true,
         confidence: p.confidence,
@@ -455,11 +466,12 @@ const addGoldenRule = (p) => {
   );
 
   const addSuggested = (s) => {
-    const label = `Favori ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + Outsider ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
+    const label = `Favori ${s.meta.a1.movement === "up" ? "monte" : "baisse"} (${s.meta.a1.breach ? "seuil KO" : "seuil OK"}) + Outsider ${s.meta.a2.movement === "up" ? "monte" : "baisse"} (${s.meta.a2.breach ? "seuil KO" : "seuil OK"}) + Dernier: ${s.lastWinner === "favori" ? "Fav" : s.lastWinner === "outsider" ? "Out" : "?"} → ${s.winner === "favori" ? "Favori" : "Outsider"} gagne`;
     const existing = existingRule(s);
     if (existing) {
       saveRules(rules.map(r => r.id === existing.id ? {
         ...r, label, winner: s.winner,
+        last_winner: s.lastWinner !== "inconnu" ? s.lastWinner : undefined,
         description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
         confidence: s.confidence,
       } : r));
@@ -469,6 +481,7 @@ const addGoldenRule = (p) => {
         description: `Détectée auto — ${s.total} matchs, confiance ${s.confidence}%`,
         p1_movement: s.meta.a1.movement, p1_breach: s.meta.a1.breach,
         p2_movement: s.meta.a2.movement, p2_breach: s.meta.a2.breach,
+        last_winner: s.lastWinner !== "inconnu" ? s.lastWinner : undefined,
         winner: s.winner, active: true, confidence: s.confidence,
       }]);
     }
@@ -548,6 +561,16 @@ const addGoldenRule = (p) => {
                   <div className="g2">
                     <OddsInput label="Joueur 1" color="#a78bfa" value={p1} onChange={setP1} />
                     <OddsInput label="Joueur 2" color="#60a5fa" value={p2} onChange={setP2} />
+                  </div>
+                  <div style={{ marginTop: "1rem" }}>
+                    <label style={S.label}>⏮ Gagnant du dernier match entre ces deux joueurs</label>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      {["favori", "outsider"].map(v => (
+                        <button key={v} onClick={() => setLastWinnerInput(v)} style={{ flex: 1, padding: "0.55rem", borderRadius: 6, border: `1px solid ${lastWinnerInput === v ? (v === "favori" ? "#f59e0b" : "#60a5fa") : "#2a2a3a"}`, background: lastWinnerInput === v ? (v === "favori" ? "#1c1008" : "#0a1018") : "transparent", color: lastWinnerInput === v ? (v === "favori" ? "#fbbf24" : "#93c5fd") : "#6b6b88", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.78rem", cursor: "pointer", fontWeight: lastWinnerInput === v ? 600 : 400 }}>
+                          {v === "favori" ? "⭐ Favori avait gagné" : "💥 Outsider avait gagné"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 {hasAnalysis && (
@@ -671,6 +694,13 @@ const addGoldenRule = (p) => {
                         <option value="p2">Joueur 2</option>
                       </select>
                     </div>
+                    <div>
+                      <label style={S.label}>Gagnant du dernier match</label>
+                      <select value={hLastWinner} onChange={(e) => setHLastWinner(e.target.value)}>
+                        <option value="favori">Favori</option>
+                        <option value="outsider">Outsider</option>
+                      </select>
+                    </div>
                     <div style={{ display: "flex", alignItems: "flex-end" }}>
                       <button style={{ ...S.btn, background: "linear-gradient(135deg,#7c3aed,#2563eb)", color: "white", width: "100%", justifyContent: "center" }} onClick={addMatch} disabled={!hP1.before || !hP1.after || !hP2.before || !hP2.after}>
                         + Ajouter
@@ -705,6 +735,11 @@ const addGoldenRule = (p) => {
                               <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
                                 {[`Favori: ${s.meta.a1.movement === "up" ? "monte" : "baisse"} ${s.meta.a1.breach ? "⚠" : "✓"}`, `Outsider: ${s.meta.a2.movement === "up" ? "monte" : "baisse"} ${s.meta.a2.breach ? "⚠" : "✓"}`]
                                   .map((t, j) => <span key={j} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
+                                {s.lastWinner && s.lastWinner !== "inconnu" && (
+                                  <span style={{ background: "#0a1018", border: "1px solid #1e3a5e", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#93c5fd" }}>
+                                    ⏮ Dernier: {s.lastWinner === "favori" ? "Fav" : "Out"}
+                                  </span>
+                                )}
                                 <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>
                                   → {s.winner === "favori" ? "Favori" : "Outsider"} gagne
                                 </span>
@@ -819,6 +854,11 @@ const addGoldenRule = (p) => {
                           </div>
                           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                             <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>🏆 {wLabel} gagne</span>
+                            {m.lastWinner && (
+                              <span style={{ background: "#0a0f1a", border: "1px solid #1e3a5e", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.65rem", color: "#93c5fd" }}>
+                                ⏮ Dernier match : {m.lastWinner === "favori" ? "Favori" : "Outsider"}
+                              </span>
+                            )}
                             <button style={{ ...S.btn, padding: "0.35rem 0.65rem", fontSize: "0.68rem", background: "transparent", border: "1px solid #3a1a1a", color: "#f87171" }} onClick={() => saveHistory(history.filter(h => h.id !== m.id))}>✕</button>
                           </div>
                         </div>
@@ -902,6 +942,7 @@ const addGoldenRule = (p) => {
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
                       {[`Favori: ${r.p1_movement === "up" ? "monte" : r.p1_movement === "down" ? "baisse" : "~"} ${r.p1_breach ? "⚠" : "✓"}`, `Outsider: ${r.p2_movement === "up" ? "monte" : r.p2_movement === "down" ? "baisse" : "~"} ${r.p2_breach ? "⚠" : "✓"}`]
                          .map((t, i) => <span key={i} style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a0a0c0" }}>{t}</span>)}
+                        {r.last_winner && <span style={{ background: "#0a1018", border: "1px solid #1e3a5e", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#93c5fd" }}>⏮ Dernier: {r.last_winner === "favori" ? "Fav" : "Out"}</span>}
                         <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#fbbf24" }}>→ {winnerLabel(r.winner, true)} gagne</span>
                         {r.confidence && <span style={{ background: "#1a1a2e", border: "1px solid #2a2a3a", borderRadius: 4, padding: "0.2rem 0.5rem", fontSize: "0.65rem", color: "#a78bfa" }}>🤖 {r.confidence}%</span>}
                       </div>
