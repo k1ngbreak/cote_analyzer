@@ -864,7 +864,21 @@ const addGoldenRule = (p) => {
                         </div>
 
                         <div style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "0.65rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Round :</span>
+                          <span style={{ fontSize: "0.65rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em" }}>Dernier match :</span>
+                          <button
+                            onClick={() => saveHistory(history.map(h => h.id === m.id ? { ...h, lastWinner: "favori" } : h))}
+                            style={{ background: m.lastWinner === "favori" ? "#1c1008" : "transparent", border: `1px solid ${m.lastWinner === "favori" ? "#f59e0b" : "#2a2a3a"}`, borderRadius: 4, color: m.lastWinner === "favori" ? "#fbbf24" : "#3a3a55", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.65rem", padding: "0.25rem 0.6rem", cursor: "pointer" }}
+                          >
+                            ⭐ Favori
+                          </button>
+                          <button
+                            onClick={() => saveHistory(history.map(h => h.id === m.id ? { ...h, lastWinner: "outsider" } : h))}
+                            style={{ background: m.lastWinner === "outsider" ? "#0a1018" : "transparent", border: `1px solid ${m.lastWinner === "outsider" ? "#60a5fa" : "#2a2a3a"}`, borderRadius: 4, color: m.lastWinner === "outsider" ? "#93c5fd" : "#3a3a55", fontFamily: "IBM Plex Mono, monospace", fontSize: "0.65rem", padding: "0.25rem 0.6rem", cursor: "pointer" }}
+                          >
+                            💥 Outsider
+                          </button>
+                          {!m.lastWinner && <span style={{ fontSize: "0.62rem", color: "#f87171" }}>⚠ Non renseigné</span>}
+                        </div>
                           {isEditingRound ? (
                             <>
                               <input
