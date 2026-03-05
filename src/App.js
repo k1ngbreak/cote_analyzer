@@ -363,45 +363,105 @@ export default function App() {
     setShowDeepScan(true);
     setTimeout(() => {
       const testThresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45];
+
+      // ── TRAIN / TEST SPLIT ──
+      // On trie par date d'insertion (id = timestamp) : les plus anciens = train, les plus récents = test
+      const sorted = [...history].sort((a, b) => a.id - b.id);
+      const splitIdx = Math.floor(sorted.length * 0.7);
+      const trainSet = sorted.slice(0, splitIdx);
+      const testSet = sorted.slice(splitIdx);
+      const hasTestSet = testSet.length >= 2;
+
+      // Helper : scanner un set de matchs avec des seuils donnés
+      const scanSet = (matchSet, thUp, thDown) => {
+        const map = {};
+        matchSet.forEach(m => {
+          const p1Fav = getP1IsFav(m);
+          const favAfter = p1Fav ? m.a1.after : m.a2.after;
+          const bracket = getOddsBracket(favAfter);
+          const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
+          const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
+          const lastW = m.lastWinner || "inconnu";
+          const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? "KO" : "OK"}) | Outsider:${a2.movement}(${a2.breach ? "KO" : "OK"}) | LastWin=${lastW}`;
+          const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
+          if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2, lastWinner: lastW };
+          if (winnerIsFav) map[k].fav++;
+          else map[k].outsider++;
+        });
+        return map;
+      };
+
+      // ── PHASE 1 : trouver les patterns sur le set d'entraînement ──
+      // On compte aussi la robustesse (combien de combinaisons de seuils confirment le pattern)
+      const patternRobustness = {}; // key -> { winner -> count }
       const foundConfigs = [];
 
       testThresholds.forEach(thUp => {
         testThresholds.forEach(thDown => {
-          const map = {};
-          history.forEach(m => {
-            const p1Fav = getP1IsFav(m);
-            const favAfter = p1Fav ? m.a1.after : m.a2.after;
-            const bracket = getOddsBracket(favAfter);
-            const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
-            const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
-            const lastW = m.lastWinner || "inconnu";
-            const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? "KO" : "OK"}) | Outsider:${a2.movement}(${a2.breach ? "KO" : "OK"}) | LastWin=${lastW}`;
-            const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
-            if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2, lastWinner: lastW };
-            if (winnerIsFav) map[k].fav++;
-            else map[k].outsider++;
-          });
+          const trainMap = scanSet(trainSet, thUp, thDown);
 
-          Object.entries(map).forEach(([key, v]) => {
+          Object.entries(trainMap).forEach(([key, v]) => {
             const total = v.fav + v.outsider;
             if (total >= minMatchesDeep) {
               const confFav = Math.round((v.fav / total) * 100);
               const confOut = Math.round((v.outsider / total) * 100);
-              if (confFav >= 80) foundConfigs.push({ ...v, winner: "favori", confidence: confFav, total, key });
-              if (confOut >= 80) foundConfigs.push({ ...v, winner: "outsider", confidence: confOut, total, key });
+
+              // Compte la robustesse pour chaque pattern/winner
+              if (!patternRobustness[key]) patternRobustness[key] = { favori: 0, outsider: 0 };
+              if (confFav >= 80) {
+                patternRobustness[key].favori++;
+                foundConfigs.push({ ...v, winner: "favori", confidence: confFav, total, key });
+              }
+              if (confOut >= 80) {
+                patternRobustness[key].outsider++;
+                foundConfigs.push({ ...v, winner: "outsider", confidence: confOut, total, key });
+              }
             }
           });
         });
       });
 
-      const uniqueBest = [];
+      // ── PHASE 2 : dédoublonner et garder le meilleur par pattern/winner ──
+      const uniqueTrain = [];
       foundConfigs.sort((a, b) => b.confidence - a.confidence || b.total - a.total).forEach(config => {
-        if (!uniqueBest.some(u => u.key === config.key && u.winner === config.winner)) {
-          uniqueBest.push(config);
+        if (!uniqueTrain.some(u => u.key === config.key && u.winner === config.winner)) {
+          uniqueTrain.push(config);
         }
       });
 
-      setGoldenPatterns(uniqueBest);
+      // ── PHASE 3 : valider sur le test set ──
+      const validated = uniqueTrain.map(p => {
+        const robustness = patternRobustness[p.key]?.[p.winner] || 1;
+
+        if (!hasTestSet) {
+          return { ...p, robustness, validated: false, testConfidence: null, testTotal: 0, validationSkipped: true };
+        }
+
+        // Cherche ce pattern dans le test set avec les mêmes seuils
+        const testMap = scanSet(testSet, p.thUp, p.thDown);
+        const testEntry = testMap[p.key];
+
+        if (!testEntry) {
+          // Pattern absent du test set → pas de validation possible
+          return { ...p, robustness, validated: false, testConfidence: null, testTotal: 0 };
+        }
+
+        const testTotal = testEntry.fav + testEntry.outsider;
+        const testCorrect = p.winner === "favori" ? testEntry.fav : testEntry.outsider;
+        const testConf = Math.round((testCorrect / testTotal) * 100);
+        const validated = testConf >= 60; // Au moins 60% sur le test set pour valider
+
+        return { ...p, robustness, validated, testConfidence: testConf, testTotal };
+      });
+
+      // Trier : validés en premier, puis par robustesse, puis par confiance
+      validated.sort((a, b) => {
+        if (a.validated !== b.validated) return b.validated - a.validated;
+        if (b.robustness !== a.robustness) return b.robustness - a.robustness;
+        return b.confidence - a.confidence;
+      });
+
+      setGoldenPatterns(validated);
       setIsScanning(false);
     }, 100);
   };
@@ -823,30 +883,72 @@ export default function App() {
                     {showDeepScan && !isScanning && (
                       <div style={{ marginTop: "1.25rem" }}>
                         <div style={{ borderTop: "1px solid #3a1a0a", marginBottom: "1rem" }} />
+                        {history.length < 10 && (
+                          <div style={{ background: "#1a1008", border: "1px solid #78350f", borderRadius: 8, padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.72rem", color: "#fbbf24" }}>
+                            ⚠ Moins de 10 matchs — le train/test split n'est pas fiable. Ajoute plus de matchs pour des résultats solides.
+                          </div>
+                        )}
                         {goldenPatterns.length === 0 ? (
                           <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem" }}>Aucun pattern à +80% trouvé avec cet échantillon.</div>
-                        ) : goldenPatterns.map((p, i) => (
-                          <div key={i} style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
-                              <div>
-                                <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>🔥 {p.confidence}% réussite ({p.winner === "favori" ? "Favori" : "Outsider"})</div>
-                                <div style={{ fontSize: "0.7rem", color: "#d97706" }}>Sur {p.total} matchs</div>
-                              </div>
-                              <button
-                                style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none" }}
-                                onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
-                              >
-                                {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
-                              </button>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginBottom: "0.75rem", lineHeight: 1.6 }}>
+                              Entraînement sur les <strong style={{ color: "#a0a0c0" }}>70% matchs les plus anciens</strong>, validation sur les <strong style={{ color: "#a0a0c0" }}>30% les plus récents</strong>. Les patterns ✅ tiennent sur les deux sets.
                             </div>
-                            <div style={{ fontSize: "0.85rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>{p.key}</div>
-                            <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                              <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
-                              <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
-                              <span><strong>Détail :</strong> {p.fav} Fav - {p.outsider} Out</span>
-                            </div>
-                          </div>
-                        ))}
+                            {goldenPatterns.map((p, i) => {
+                              const isValidated = p.validated;
+                              const isSkipped = p.validationSkipped;
+                              const borderColor = isValidated ? "#16a34a" : isSkipped ? "#78350f" : "#7f1d1d";
+                              const bgColor = isValidated ? "#0a1a0a" : isSkipped ? "#1c1008" : "#1a0a0a";
+                              return (
+                                <div key={i} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
+                                  {/* Header */}
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                                    <div>
+                                      <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>
+                                        🔥 {p.confidence}% train ({p.winner === "favori" ? "Favori" : "Outsider"}) · {p.total} matchs
+                                      </div>
+                                      {/* Badge validation */}
+                                      <div style={{ marginTop: "0.3rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                                        {isSkipped ? (
+                                          <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#fbbf24" }}>
+                                            ⏭ Pas assez de matchs pour valider
+                                          </span>
+                                        ) : isValidated ? (
+                                          <span style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#4ade80", fontWeight: 600 }}>
+                                            ✅ Validé — {p.testConfidence}% sur {p.testTotal} matchs récents
+                                          </span>
+                                        ) : (
+                                          <span style={{ background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#f87171", fontWeight: 600 }}>
+                                            ❌ Non validé — {p.testConfidence !== null ? `${p.testConfidence}% sur ${p.testTotal} matchs récents` : "absent du set de test"}
+                                          </span>
+                                        )}
+                                        {/* Badge robustesse */}
+                                        <span style={{ background: p.robustness >= 5 ? "#1a1a0a" : "#12121e", border: `1px solid ${p.robustness >= 5 ? "#ca8a04" : p.robustness >= 2 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: p.robustness >= 5 ? "#fbbf24" : p.robustness >= 2 ? "#93c5fd" : "#6b6b88" }}>
+                                          {p.robustness >= 5 ? "🔒" : p.robustness >= 2 ? "🔑" : "🔓"} Robustesse {p.robustness}/81 combinaisons
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none", opacity: (!isValidated && !isSkipped) ? 0.5 : 1 }}
+                                      onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
+                                    >
+                                      {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
+                                    </button>
+                                  </div>
+                                  {/* Clé pattern */}
+                                  <div style={{ fontSize: "0.82rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>{p.key}</div>
+                                  {/* Détails seuils */}
+                                  <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                                    <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                                    <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                                    <span><strong>Détail train :</strong> {p.fav} Fav - {p.outsider} Out</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
