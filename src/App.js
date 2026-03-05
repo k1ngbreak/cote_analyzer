@@ -826,18 +826,18 @@ export default function App() {
                               Entraînement sur les <strong style={{ color: "#a0a0c0" }}>70% matchs les plus anciens</strong>, validation sur les <strong style={{ color: "#a0a0c0" }}>30% les plus récents</strong>. Les patterns ✅ tiennent sur les deux sets.
                             </div>
                             {(() => {
-                              const validated = goldenPatterns.filter(p => p.validated);
+                              const validatedP = goldenPatterns.filter(p => p.validated);
                               const skipped = goldenPatterns.filter(p => p.validationSkipped && !p.validated);
                               const failed = goldenPatterns.filter(p => !p.validated && !p.validationSkipped);
                               return (
                                 <>
                                   {/* ── Patterns validés ── */}
-                                  {validated.length === 0 && (
+                                  {validatedP.length === 0 && (
                                     <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem", marginBottom: "1rem" }}>
                                       Aucun pattern validé sur les données récentes.
                                     </div>
                                   )}
-                                  {validated.map((p, i) => (
+                                  {validatedP.map((p, i) => (
                                     <div key={i} style={{ background: "#0a1a0a", border: "1px solid #16a34a", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
                                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
                                         <div>
@@ -920,6 +920,7 @@ export default function App() {
                                 </>
                               );
                             })()}
+                          </>
                         )}
                       </div>
                     )}
