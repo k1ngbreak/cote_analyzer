@@ -180,6 +180,7 @@ export default function App() {
   const [goldenPatterns, setGoldenPatterns] = useState([]);
   const [showDeepScan, setShowDeepScan] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [minMatchesDeep, setMinMatchesDeep] = useState(5);
 
   useEffect(() => {
@@ -361,109 +362,27 @@ export default function App() {
   const runDeepScan = () => {
     setIsScanning(true);
     setShowDeepScan(true);
-    setTimeout(() => {
-      const testThresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45];
+    setScanProgress(0);
 
-      // ── TRAIN / TEST SPLIT ──
-      // On trie par date d'insertion (id = timestamp) : les plus anciens = train, les plus récents = test
-      const sorted = [...history].sort((a, b) => a.id - b.id);
-      const splitIdx = Math.floor(sorted.length * 0.7);
-      const trainSet = sorted.slice(0, splitIdx);
-      const testSet = sorted.slice(splitIdx);
-      const hasTestSet = testSet.length >= 2;
+    const worker = new Worker(new URL("./deepScan.worker.js", import.meta.url));
 
-      // Helper : scanner un set de matchs avec des seuils donnés
-      const scanSet = (matchSet, thUp, thDown) => {
-        const map = {};
-        matchSet.forEach(m => {
-          const p1Fav = getP1IsFav(m);
-          const favAfter = p1Fav ? m.a1.after : m.a2.after;
-          const bracket = getOddsBracket(favAfter);
-          const a1 = analyzeOdds(m.a1.before, m.a1.after, thUp, thDown);
-          const a2 = analyzeOdds(m.a2.before, m.a2.after, thUp, thDown);
-          const lastW = m.lastWinner || "inconnu";
-          const k = `[${bracket}] Favori:${a1.movement}(${a1.breach ? "KO" : "OK"}) | Outsider:${a2.movement}(${a2.breach ? "KO" : "OK"}) | LastWin=${lastW}`;
-          const winnerIsFav = (m.winner === "p1" && p1Fav) || (m.winner === "p2" && !p1Fav) || m.winner === "favori";
-          if (!map[k]) map[k] = { fav: 0, outsider: 0, thUp, thDown, bracket, a1, a2, lastWinner: lastW };
-          if (winnerIsFav) map[k].fav++;
-          else map[k].outsider++;
-        });
-        return map;
-      };
+    worker.onmessage = (e) => {
+      if (e.data.type === "progress") {
+        setScanProgress(e.data.pct);
+      } else if (e.data.type === "result") {
+        setGoldenPatterns(e.data.patterns);
+        setIsScanning(false);
+        setScanProgress(100);
+        worker.terminate();
+      }
+    };
 
-      // ── PHASE 1 : trouver les patterns sur le set d'entraînement ──
-      // On compte aussi la robustesse (combien de combinaisons de seuils confirment le pattern)
-      const patternRobustness = {}; // key -> { winner -> count }
-      const foundConfigs = [];
-
-      testThresholds.forEach(thUp => {
-        testThresholds.forEach(thDown => {
-          const trainMap = scanSet(trainSet, thUp, thDown);
-
-          Object.entries(trainMap).forEach(([key, v]) => {
-            const total = v.fav + v.outsider;
-            if (total >= minMatchesDeep) {
-              const confFav = Math.round((v.fav / total) * 100);
-              const confOut = Math.round((v.outsider / total) * 100);
-
-              // Compte la robustesse pour chaque pattern/winner
-              if (!patternRobustness[key]) patternRobustness[key] = { favori: 0, outsider: 0 };
-              if (confFav >= 80) {
-                patternRobustness[key].favori++;
-                foundConfigs.push({ ...v, winner: "favori", confidence: confFav, total, key });
-              }
-              if (confOut >= 80) {
-                patternRobustness[key].outsider++;
-                foundConfigs.push({ ...v, winner: "outsider", confidence: confOut, total, key });
-              }
-            }
-          });
-        });
-      });
-
-      // ── PHASE 2 : dédoublonner et garder le meilleur par pattern/winner ──
-      const uniqueTrain = [];
-      foundConfigs.sort((a, b) => b.confidence - a.confidence || b.total - a.total).forEach(config => {
-        if (!uniqueTrain.some(u => u.key === config.key && u.winner === config.winner)) {
-          uniqueTrain.push(config);
-        }
-      });
-
-      // ── PHASE 3 : valider sur le test set ──
-      const validated = uniqueTrain.map(p => {
-        const robustness = patternRobustness[p.key]?.[p.winner] || 1;
-
-        if (!hasTestSet) {
-          return { ...p, robustness, validated: false, testConfidence: null, testTotal: 0, validationSkipped: true };
-        }
-
-        // Cherche ce pattern dans le test set avec les mêmes seuils
-        const testMap = scanSet(testSet, p.thUp, p.thDown);
-        const testEntry = testMap[p.key];
-
-        if (!testEntry) {
-          // Pattern absent du test set → pas de validation possible
-          return { ...p, robustness, validated: false, testConfidence: null, testTotal: 0 };
-        }
-
-        const testTotal = testEntry.fav + testEntry.outsider;
-        const testCorrect = p.winner === "favori" ? testEntry.fav : testEntry.outsider;
-        const testConf = Math.round((testCorrect / testTotal) * 100);
-        const validated = testConf >= 60; // Au moins 60% sur le test set pour valider
-
-        return { ...p, robustness, validated, testConfidence: testConf, testTotal };
-      });
-
-      // Trier : validés en premier, puis par robustesse, puis par confiance
-      validated.sort((a, b) => {
-        if (a.validated !== b.validated) return b.validated - a.validated;
-        if (b.robustness !== a.robustness) return b.robustness - a.robustness;
-        return b.confidence - a.confidence;
-      });
-
-      setGoldenPatterns(validated);
+    worker.onerror = () => {
       setIsScanning(false);
-    }, 100);
+      worker.terminate();
+    };
+
+    worker.postMessage({ history, minMatchesDeep });
   };
 
   const alreadyAddedGolden = (p) => rules.some((r) =>
@@ -872,7 +791,7 @@ export default function App() {
                         <div style={{ fontSize: "0.68rem", color: "#a0a0c0" }}>Recherche les seuils générant +80% de réussite.</div>
                       </div>
                       <button style={{ ...S.btn, background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "white", fontWeight: 600 }} onClick={runDeepScan} disabled={isScanning}>
-                        {isScanning ? "Analyse en cours..." : "✨ Lancer le Deep Scan"}
+                        {isScanning ? `Analyse... ${scanProgress}%` : "✨ Lancer le Deep Scan"}
                       </button>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -880,6 +799,17 @@ export default function App() {
                       <input className="inp" type="number" min="2" max="50" value={minMatchesDeep} onChange={(e) => setMinMatchesDeep(parseInt(e.target.value) || 5)} style={{ width: 70, borderColor: "#ea580c" }} />
                       <span style={{ fontSize: "0.72rem", color: "#6b6b88" }}>matchs</span>
                     </div>
+                    {isScanning && (
+                      <div style={{ marginBottom: "1rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                          <span style={{ fontSize: "0.68rem", color: "#a0a0c0" }}>3 600 combinaisons de seuils en cours…</span>
+                          <span style={{ fontSize: "0.68rem", color: "#f59e0b", fontWeight: 600 }}>{scanProgress}%</span>
+                        </div>
+                        <div style={{ height: 6, background: "#1a1a2e", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${scanProgress}%`, background: "linear-gradient(90deg,#f59e0b,#ea580c)", borderRadius: 3, transition: "width 0.3s ease" }} />
+                        </div>
+                      </div>
+                    )}
                     {showDeepScan && !isScanning && (
                       <div style={{ marginTop: "1.25rem" }}>
                         <div style={{ borderTop: "1px solid #3a1a0a", marginBottom: "1rem" }} />
