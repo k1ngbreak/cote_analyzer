@@ -65,7 +65,8 @@ self.onmessage = function (e) {
 
       Object.entries(trainMap).forEach(([key, v]) => {
         const total = v.fav + v.outsider;
-        if (total >= minMatchesDeep) {
+        // Minimum 5 matchs en train ET le seuil utilisateur, pour éviter le bruit
+        if (total >= Math.max(minMatchesDeep, 5)) {
           const confFav = Math.round((v.fav / total) * 100);
           const confOut = Math.round((v.outsider / total) * 100);
 
@@ -113,6 +114,12 @@ self.onmessage = function (e) {
     }
 
     const testTotal = testEntry.fav + testEntry.outsider;
+
+    // Minimum 3 matchs dans le test set pour que la validation soit crédible
+    if (testTotal < 3) {
+      return { ...p, robustness, validated: false, testConfidence: null, testTotal, validationSkipped: true, skipReason: `Seulement ${testTotal} match${testTotal > 1 ? "s" : ""} récent${testTotal > 1 ? "s" : ""} — insuffisant pour valider` };
+    }
+
     const testCorrect = p.winner === "favori" ? testEntry.fav : testEntry.outsider;
     const testConf = Math.round((testCorrect / testTotal) * 100);
     const isValidated = testConf >= 60;
