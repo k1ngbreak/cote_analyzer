@@ -825,59 +825,101 @@ export default function App() {
                             <div style={{ fontSize: "0.68rem", color: "#6b6b88", marginBottom: "0.75rem", lineHeight: 1.6 }}>
                               Entraînement sur les <strong style={{ color: "#a0a0c0" }}>70% matchs les plus anciens</strong>, validation sur les <strong style={{ color: "#a0a0c0" }}>30% les plus récents</strong>. Les patterns ✅ tiennent sur les deux sets.
                             </div>
-                            {goldenPatterns.map((p, i) => {
-                              const isValidated = p.validated;
-                              const isSkipped = p.validationSkipped;
-                              const borderColor = isValidated ? "#16a34a" : isSkipped ? "#78350f" : "#7f1d1d";
-                              const bgColor = isValidated ? "#0a1a0a" : isSkipped ? "#1c1008" : "#1a0a0a";
+                            {(() => {
+                              const validated = goldenPatterns.filter(p => p.validated);
+                              const skipped = goldenPatterns.filter(p => p.validationSkipped && !p.validated);
+                              const failed = goldenPatterns.filter(p => !p.validated && !p.validationSkipped);
                               return (
-                                <div key={i} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
-                                  {/* Header */}
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
-                                    <div>
-                                      <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>
-                                        🔥 {p.confidence}% train ({p.winner === "favori" ? "Favori" : "Outsider"}) · {p.total} matchs
+                                <>
+                                  {/* ── Patterns validés ── */}
+                                  {validated.length === 0 && (
+                                    <div style={{ textAlign: "center", color: "#6b6b88", fontSize: "0.78rem", marginBottom: "1rem" }}>
+                                      Aucun pattern validé sur les données récentes.
+                                    </div>
+                                  )}
+                                  {validated.map((p, i) => (
+                                    <div key={i} style={{ background: "#0a1a0a", border: "1px solid #16a34a", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem" }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                                        <div>
+                                          <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>
+                                            🔥 {p.confidence}% train ({p.winner === "favori" ? "Favori" : "Outsider"}) · {p.total} matchs
+                                          </div>
+                                          <div style={{ marginTop: "0.3rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                                            <span style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#4ade80", fontWeight: 600 }}>
+                                              ✅ Validé — {p.testConfidence}% sur {p.testTotal} matchs récents
+                                            </span>
+                                            <span style={{ background: p.robustness >= 500 ? "#1a1a0a" : p.robustness >= 100 ? "#0a1018" : "#12121e", border: `1px solid ${p.robustness >= 500 ? "#ca8a04" : p.robustness >= 100 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: p.robustness >= 500 ? "#fbbf24" : p.robustness >= 100 ? "#93c5fd" : "#6b6b88" }}>
+                                              {p.robustness >= 500 ? "🔒" : p.robustness >= 100 ? "🔑" : "🔓"} Robustesse {p.robustness}/3600
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <button
+                                          style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none" }}
+                                          onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
+                                        >
+                                          {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
+                                        </button>
                                       </div>
-                                      {/* Badge validation */}
-                                      <div style={{ marginTop: "0.3rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                                        {isSkipped ? (
-                                          <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#fbbf24" }}>
-                                            ⏭ Pas assez de matchs pour valider
-                                          </span>
-                                        ) : isValidated ? (
-                                          <span style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#4ade80", fontWeight: 600 }}>
-                                            ✅ Validé — {p.testConfidence}% sur {p.testTotal} matchs récents
-                                          </span>
-                                        ) : (
-                                          <span style={{ background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#f87171", fontWeight: 600 }}>
-                                            ❌ Non validé — {p.testConfidence !== null ? `${p.testConfidence}% sur ${p.testTotal} matchs récents` : "absent du set de test"}
-                                          </span>
-                                        )}
-                                        {/* Badge robustesse */}
-                                        <span style={{ background: p.robustness >= 5 ? "#1a1a0a" : "#12121e", border: `1px solid ${p.robustness >= 5 ? "#ca8a04" : p.robustness >= 2 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: p.robustness >= 5 ? "#fbbf24" : p.robustness >= 2 ? "#93c5fd" : "#6b6b88" }}>
-                                          {p.robustness >= 5 ? "🔒" : p.robustness >= 2 ? "🔑" : "🔓"} Robustesse {p.robustness}/81 combinaisons
-                                        </span>
+                                      <div style={{ fontSize: "0.82rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>{p.key}</div>
+                                      <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                                        <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                                        <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                                        <span><strong>Détail train :</strong> {p.fav} Fav - {p.outsider} Out</span>
                                       </div>
                                     </div>
-                                    <button
-                                      style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "linear-gradient(135deg,#f59e0b,#ea580c)", color: alreadyAddedGolden(p) ? "#f59e0b" : "white", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: alreadyAddedGolden(p) ? "1px solid #f59e0b" : "none", opacity: (!isValidated && !isSkipped) ? 0.5 : 1 }}
-                                      onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
-                                    >
-                                      {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter aux Règles"}
-                                    </button>
-                                  </div>
-                                  {/* Clé pattern */}
-                                  <div style={{ fontSize: "0.82rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>{p.key}</div>
-                                  {/* Détails seuils */}
-                                  <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                                    <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
-                                    <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
-                                    <span><strong>Détail train :</strong> {p.fav} Fav - {p.outsider} Out</span>
-                                  </div>
-                                </div>
+                                  ))}
+
+                                  {/* ── Patterns non validables (test set trop petit) ── */}
+                                  {skipped.length > 0 && (
+                                    <div style={{ marginTop: "0.5rem", marginBottom: "0.5rem" }}>
+                                      <div style={{ fontSize: "0.68rem", color: "#6b6b88", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>
+                                        ⏭ {skipped.length} pattern{skipped.length > 1 ? "s" : ""} — données récentes insuffisantes pour valider
+                                      </div>
+                                      {skipped.map((p, i) => (
+                                        <div key={i} style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 10, padding: "1rem", marginBottom: "0.65rem", opacity: 0.8 }}>
+                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                                            <div>
+                                              <div style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 700 }}>
+                                                🔥 {p.confidence}% train ({p.winner === "favori" ? "Favori" : "Outsider"}) · {p.total} matchs
+                                              </div>
+                                              <div style={{ marginTop: "0.3rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                                                <span style={{ background: "#1c1008", border: "1px solid #78350f", borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: "#fbbf24" }}>
+                                                  ⏭ {p.skipReason || "Pas assez de matchs récents pour valider"}
+                                                </span>
+                                                <span style={{ background: p.robustness >= 500 ? "#1a1a0a" : p.robustness >= 100 ? "#0a1018" : "#12121e", border: `1px solid ${p.robustness >= 500 ? "#ca8a04" : p.robustness >= 100 ? "#2563eb" : "#2a2a3a"}`, borderRadius: 4, padding: "0.15rem 0.5rem", fontSize: "0.62rem", color: p.robustness >= 500 ? "#fbbf24" : p.robustness >= 100 ? "#93c5fd" : "#6b6b88" }}>
+                                                  {p.robustness >= 500 ? "🔒" : p.robustness >= 100 ? "🔑" : "🔓"} Robustesse {p.robustness}/3600
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <button
+                                              style={{ ...S.btn, background: alreadyAddedGolden(p) ? "#2a180a" : "transparent", color: alreadyAddedGolden(p) ? "#f59e0b" : "#f59e0b", fontSize: "0.65rem", padding: "0.4rem 0.85rem", border: `1px solid ${alreadyAddedGolden(p) ? "#f59e0b" : "#78350f"}` }}
+                                              onClick={() => !alreadyAddedGolden(p) && addGoldenRule(p)}
+                                            >
+                                              {alreadyAddedGolden(p) ? "✓ Dans les règles" : "+ Ajouter quand même"}
+                                            </button>
+                                          </div>
+                                          <div style={{ fontSize: "0.82rem", color: "#fef3c7", marginBottom: "0.5rem", fontWeight: 500 }}>{p.key}</div>
+                                          <div style={{ fontSize: "0.68rem", color: "#a1a1aa", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                                            <span><strong>Seuil Hausse :</strong> {p.thUp}</span>
+                                            <span><strong>Seuil Baisse :</strong> {p.thDown}</span>
+                                            <span><strong>Détail train :</strong> {p.fav} Fav - {p.outsider} Out</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* ── Patterns échoués — cachés par défaut ── */}
+                                  {failed.length > 0 && (
+                                    <div style={{ marginTop: "0.5rem" }}>
+                                      <div style={{ fontSize: "0.68rem", color: "#7f1d1d", textTransform: "uppercase", letterSpacing: "0.06em", padding: "0.5rem 0", borderTop: "1px solid #2a1a1a" }}>
+                                        ❌ {failed.length} pattern{failed.length > 1 ? "s" : ""} non validé{failed.length > 1 ? "s" : ""} (surapprentissage détecté) — à ignorer
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
                               );
-                            })}
-                          </>
+                            })()}
                         )}
                       </div>
                     )}
