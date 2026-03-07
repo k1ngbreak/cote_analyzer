@@ -90,9 +90,9 @@ self.onmessage = function (e) {
     });
   });
 
-  // ── PHASE 2 : dédoublonner ──
+  // ── PHASE 2 : dédoublonner — priorité au plus grand échantillon, puis meilleure confiance ──
   const uniqueTrain = [];
-  foundConfigs.sort((a, b) => b.confidence - a.confidence || b.total - a.total).forEach(config => {
+  foundConfigs.sort((a, b) => b.total - a.total || b.confidence - a.confidence).forEach(config => {
     if (!uniqueTrain.some(u => u.key === config.key && u.winner === config.winner)) {
       uniqueTrain.push(config);
     }
